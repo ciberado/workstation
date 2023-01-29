@@ -42,7 +42,7 @@ server {
         server_name $INSTANCE_DNS;
 
         location / {
-                try_files $uri $uri/ =404;
+                try_files \$uri \$uri/ =404;
         }
 }
 EOF
@@ -83,6 +83,39 @@ docker run \
  -v /docker/appdata/firefox:/config:rw \
     jlesage/firefox
 
+cat << 'EOF' > /tmp/firefox-prefix.txt
+
+map $http_upgrade $connection_upgrade {
+        default upgrade;
+        ''      close;
+}
+
+upstream docker-firefox {
+        server 127.0.0.1:5800;
+}
+
+EOF
+
+sed -i '0,/^/e cat /tmp/firefox-prefix.txt' /etc/nginx/sites-enabled/$INSTANCE_DNS
+
+cat << 'EOF' > /tmp/firefox-server.txt
+
+  location = /firefox {return 301 $scheme://$http_host/firefox/;}
+  location /firefox/ {
+    proxy_pass http://docker-firefox/;
+    location /firefox/websockify {
+      proxy_pass http://docker-firefox/websockify/;
+      proxy_http_version 1.1;
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection $connection_upgrade;
+      proxy_read_timeout 86400;
+    }
+  }
+
+EOF
+
+sed -i -e '/root/r /tmp/firefox-server.txt' /etc/nginx/sites-enabled/$INSTANCE_DNS
+
 # VSCode
 
 docker run  \
@@ -98,24 +131,26 @@ docker run  \
    lscr.io/linuxserver/code-server:latest
 
 cat << 'EOF' > /tmp/vscode.txt
+
     location /vscode/ {
-      proxy_pass http://localhost:8080/;
+      proxy_pass http://localhost:8443/;
       proxy_redirect off;
       proxy_set_header Host $host;
       proxy_set_header Upgrade $http_upgrade;
       proxy_set_header Connection upgrade;
       proxy_set_header Accept-Encoding gzip;
     }
+
 EOF
 
-sed -i '/SERVER_SECTION/r /tmp/vscode.txt' /etc/nginx/sites-enabled/$INSTANCE_DNS
+sed -i '/root/r /tmp/vscode.txt' /etc/nginx/sites-enabled/$INSTANCE_DNS
 
 service nginx restart
 
 
 # Container configuration
 
-docker exec -i code-server-ls bash << EOF
+docker exec -i code-server-ls bash << 'EOF'
 
 apt update
 apt upgrade -y
