@@ -19,7 +19,6 @@ variable "vpc_addr_prefix" {
 variable "owner" {
   description = "The owner of the infrastructure."
   type        = string
-  default     = "Unknown"
 }
 
 variable "ws_instance_type" {

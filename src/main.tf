@@ -70,6 +70,8 @@ resource "aws_instance" "workstation" {
 
   iam_instance_profile = "LabInstanceProfile"
 
+  user_data = file("userdata.sh")
+
   root_block_device {
     volume_size = 20
     volume_type = "gp3"
