@@ -27,7 +27,7 @@ The instance can be stopped and restarted safely. An *elastic IP* is attached to
 
 ## Instance deployment
 
-Install terraform if necessary:
+Install terraform if necessary. Here there are the **ubuntu** instructions. For other OS, refer to the [Install Terraform](https://developer.hashicorp.com/terraform/tutorials/aws-get-started/install-cli) web page.
 
 ```bash
 apt install -y gnupg software-properties-common curl
