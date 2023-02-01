@@ -27,6 +27,16 @@ The instance can be stopped and restarted safely. An *elastic IP* is attached to
 
 ## Instance deployment
 
+Install terraform if necessary:
+
+```bash
+apt install -y gnupg software-properties-common curl
+curl -fsSL https://apt.releases.hashicorp.com/gpg | sudo apt-key add -
+apt-add-repository "deb [arch=amd64] https://apt.releases.hashicorp.com jammy main" -y
+apt update 
+apt install terraform -y
+```
+
 From a terminal in which `terraform` is already available with proper access to AWS:
 
 ```bash
