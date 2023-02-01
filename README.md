@@ -42,5 +42,6 @@ From a terminal in which `terraform` is already available with proper access to 
 ```bash
 git clone https://github.com/ciberado/workstation
 cd workstation/src
+terraform init
 terraform apply -var owner=<name-of-the-owner>
 ```
