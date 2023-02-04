@@ -217,7 +217,7 @@ After=syslog.target
 After=network.target
 
 [Service]
-ExecStart=/usr/local/bin/ttdy docker exec -it code-server-ls bash -c "tmux attach || tmux"
+ExecStart=/usr/local/bin/ttyd docker exec -it code-server-ls bash -c "tmux attach || tmux"
 Type=simple
 Restart=always
 User=root
