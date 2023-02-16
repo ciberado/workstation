@@ -207,8 +207,8 @@ EOF
 
 # Configure ttdy
 
-wget -O /usr/local/bin/ttdy https://github.com/tsl0922/ttyd/releases/download/1.4.2/ttyd_linux.i386
-chmod +x /usr/local/bin/ttdy
+wget -O /usr/local/bin/ttyd https://github.com/tsl0922/ttyd/releases/download/1.4.2/ttyd_linux.i386
+chmod +x /usr/local/bin/ttyd
 
 cat << EOF > /etc/systemd/system/ttyd.service
 [Unit]
