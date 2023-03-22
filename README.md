@@ -45,3 +45,11 @@ cd workstation/src
 terraform init
 terraform apply -var owner=<name-of-the-owner>
 ```
+
+## Cleanup
+
+From the same directory in which the previous instructions were typed, run the next command:
+
+```bash
+terraform destroy
+```
