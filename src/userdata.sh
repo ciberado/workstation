@@ -3,6 +3,10 @@
 apt upgrade --assume-yes -y
 snap install core; snap refresh core
 
+cat << 'EOF' > /usr/local/bin/dns.sh 
+#!/bin/bash
+
+
 # DNS update
 NAME=$(curl http://169.254.169.254/latest/meta-data/tags/instance/Name)
 INSTANCE_DNS=$NAME-workstation.aprender.cloud
@@ -16,9 +20,24 @@ echo "Server $NAME FQDN is $INSTANCE_DNS, reconfiguring to point to $INSTANCE_PU
 curl -s "https://wqgpdns5io5qghzjmr3l7kwcjq0glyqz.lambda-url.eu-west-1.on.aws/?name=$NAME-workstation&ip=$INSTANCE_PUBLIC_IP"; echo
 
 until [ "$RESOLVED_IP" == "$INSTANCE_PUBLIC_IP" ]; do RESOLVED_IP=$(dig +short $INSTANCE_DNS); echo -n .; sleep 1; done; echo
+EOF
+
+NAME=$(curl http://169.254.169.254/latest/meta-data/tags/instance/Name)
+INSTANCE_DNS=$NAME-workstation.aprender.cloud
 
 
-# Install nginx
+echo Registering DNS. *********************************************
+chmod +x /usr/local/bin/dns.sh
+bash /usr/local/bin/dns.sh
+
+crontab -l > mycron
+echo "@reboot bash /usr/local/bin/dns.sh" >> mycron
+crontab mycron
+rm mycron
+
+
+
+echo Installing nginx
 
 # apt-get remove --purge nginx nginx-full nginx-common 
 apt install nginx -y
@@ -51,7 +70,7 @@ ln -s /etc/nginx/sites-available/$INSTANCE_DNS /etc/nginx/sites-enabled/
 
 service nginx restart
 
-# Generating TLS certificates, thanks to Letsencrypt
+echo Generating TLS certificates, thanks to Letsencrypt *****************
 
 apt remove certbot -y
 snap install --classic certbot
@@ -66,14 +85,14 @@ certbot --non-interactive \
 
 systemctl restart nginx
 
-# Docker
+echo Configuring Docker *************************************************
 apt install apt-transport-https ca-certificates curl software-properties-common -y
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
 add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu focal stable" -y
 apt install docker-ce -y
 usermod -aG docker ubuntu
 
-# Firefox
+echo Running Firefox container ******************************************
 
 docker run \
     -d \
@@ -116,7 +135,7 @@ EOF
 
 sed -i -e '/root/r /tmp/firefox-server.txt' /etc/nginx/sites-enabled/$INSTANCE_DNS
 
-# VSCode
+echo Running VSCode container *************************************
 
 docker run  \
    -d \
@@ -148,7 +167,7 @@ sed -i '/root/r /tmp/vscode.txt' /etc/nginx/sites-enabled/$INSTANCE_DNS
 service nginx restart
 
 
-# Container configuration
+echo VSCode Container configuration ********************************************
 
 docker exec -i code-server-ls bash << 'EOF'
 
@@ -205,7 +224,7 @@ wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O 
 EOF
 
 
-# Configure ttdy
+echo Configure ttdy *********************************************
 
 wget -O /usr/local/bin/ttyd https://github.com/tsl0922/ttyd/releases/download/1.4.2/ttyd_linux.i386
 chmod +x /usr/local/bin/ttyd

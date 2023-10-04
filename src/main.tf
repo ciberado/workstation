@@ -2,10 +2,18 @@ data "aws_vpc" "default" {
   default = true
 } 
 
+
+data "aws_subnets" "default" {
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.default.id]
+  }
+}
+
 resource "aws_security_group" "app_sg" {
   name        = "${var.prefix}_app_sg"
   description = "Workstation security group"
-  vpc_id      = module.vpc.vpc_id
+  vpc_id      = data.aws_vpc.default.id
 
   ingress {
     description      = "HTTP from Anywhere"
@@ -49,7 +57,7 @@ resource "aws_instance" "workstation" {
   ami           = data.aws_ami.ubuntu.id
   instance_type = var.ws_instance_type
 
-  subnet_id                   = module.vpc.public_subnets[0]
+  subnet_id                   = data.aws_subnets.default.ids[0]
   vpc_security_group_ids      = [aws_security_group.app_sg.id]
   associate_public_ip_address = true
 
