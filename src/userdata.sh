@@ -1,5 +1,6 @@
 #!/bin/bash
 
+apt update
 apt upgrade --assume-yes -y
 snap install core; snap refresh core
 
