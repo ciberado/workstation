@@ -32,3 +32,14 @@ variable "ws_az" {
   type        = string
   default     = "b"
 }
+variable "ws_iam_profile" {
+  description = "Name of the profile associated to the role that the instance will assume."
+  type        = string
+}
+
+variable "ws_count" {
+  description = "Number of instances created."
+  type        = number
+  default     = 1
+}
+

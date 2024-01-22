@@ -2,10 +2,10 @@
 
 apt upgrade --assume-yes -y
 snap install core; snap refresh core
+sudo apt-get install software-properties-common -y
 
 cat << 'EOF' > /usr/local/bin/dns.sh 
 #!/bin/bash
-
 
 # DNS update
 NAME=$(curl http://169.254.169.254/latest/meta-data/tags/instance/Name)
@@ -35,8 +35,6 @@ echo "@reboot bash /usr/local/bin/dns.sh" >> mycron
 crontab mycron
 rm mycron
 
-
-
 echo Installing nginx
 
 # apt-get remove --purge nginx nginx-full nginx-common 
@@ -61,7 +59,13 @@ server {
         server_name $INSTANCE_DNS;
 
         location / {
-                try_files \$uri \$uri/ =404;
+          proxy_http_version 1.1;
+          proxy_set_header Host \$host;
+          proxy_set_header X-Forwarded-Proto \$scheme;
+          proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+          proxy_set_header Upgrade \$http_upgrade;
+          proxy_set_header Connection "upgrade";
+          proxy_pass http://127.0.0.1:7681;
         }
 }
 EOF
@@ -92,88 +96,6 @@ add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu fo
 apt install docker-ce -y
 usermod -aG docker ubuntu
 
-echo Running Firefox container ******************************************
-
-docker run \
-    -d \
-    --name=firefox \
- --network host \
- --restart=unless-stopped  \
- -v /docker/appdata/firefox:/config:rw \
-    jlesage/firefox
-
-cat << 'EOF' > /tmp/firefox-prefix.txt
-
-map $http_upgrade $connection_upgrade {
-        default upgrade;
-        ''      close;
-}
-
-upstream docker-firefox {
-        server 127.0.0.1:5800;
-}
-
-EOF
-
-sed -i '0,/^/e cat /tmp/firefox-prefix.txt' /etc/nginx/sites-enabled/$INSTANCE_DNS
-
-cat << 'EOF' > /tmp/firefox-server.txt
-
-  location = /firefox {return 301 $scheme://$http_host/firefox/;}
-  location /firefox/ {
-    proxy_pass http://docker-firefox/;
-    location /firefox/websockify {
-      proxy_pass http://docker-firefox/websockify/;
-      proxy_http_version 1.1;
-      proxy_set_header Upgrade $http_upgrade;
-      proxy_set_header Connection $connection_upgrade;
-      proxy_read_timeout 86400;
-    }
-  }
-
-EOF
-
-sed -i -e '/root/r /tmp/firefox-server.txt' /etc/nginx/sites-enabled/$INSTANCE_DNS
-
-echo Running VSCode container *************************************
-
-docker run  \
-   -d \
-   --name=code-server-ls \
-   -e PASSWORD=supersecret \
-   -e PUID=0 \
-   -e PGID=0 \
-   -e TZ=Europe/London \
-   --network host \
-   -v /docker/appdata/coder-ls/.config:/config \
-   --restart unless-stopped \
-   lscr.io/linuxserver/code-server:latest
-
-cat << 'EOF' > /tmp/vscode.txt
-
-    location /vscode/ {
-      proxy_pass http://localhost:8443/;
-      proxy_redirect off;
-      proxy_set_header Host $host;
-      proxy_set_header Upgrade $http_upgrade;
-      proxy_set_header Connection upgrade;
-      proxy_set_header Accept-Encoding gzip;
-    }
-
-EOF
-
-sed -i '/root/r /tmp/vscode.txt' /etc/nginx/sites-enabled/$INSTANCE_DNS
-
-service nginx restart
-
-
-echo VSCode Container configuration ********************************************
-
-docker exec -i code-server-ls bash << 'EOF'
-
-apt update
-apt upgrade -y
-sudo apt-get install software-properties-common -y
 
 # Install and configure tmux
 
@@ -221,9 +143,6 @@ apt install -y jq
 wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/bin/yq &&\
     chmod +x /usr/bin/yq
 
-EOF
-
-
 echo Configure ttdy *********************************************
 
 wget -O /usr/local/bin/ttyd https://github.com/tsl0922/ttyd/releases/download/1.4.2/ttyd_linux.i386
@@ -236,7 +155,7 @@ After=syslog.target
 After=network.target
 
 [Service]
-ExecStart=/usr/local/bin/ttyd docker exec -it code-server-ls bash -c "tmux attach || tmux"
+ExecStart=/usr/local/bin/ttyd login
 Type=simple
 Restart=always
 User=root
@@ -249,3 +168,4 @@ EOF
 sudo systemctl start ttyd
 sudo systemctl enable ttyd
 
+echo -e "workshop@2024\nworkshop@2024" | passwd ubuntu

@@ -1,7 +1,6 @@
 data "aws_vpc" "default" {
   default = true
-} 
-
+}
 
 data "aws_subnets" "default" {
   filter {
@@ -10,32 +9,32 @@ data "aws_subnets" "default" {
   }
 }
 
-resource "aws_security_group" "app_sg" {
-  name        = "${var.prefix}_app_sg"
+resource "aws_security_group" "ws_sg" {
+  name        = "${var.prefix}_workstation_sg"
   description = "Workstation security group"
   vpc_id      = data.aws_vpc.default.id
 
   ingress {
-    description      = "HTTP from Anywhere"
-    from_port        = 80
-    to_port          = 80
-    protocol         = "tcp"
-    cidr_blocks      = ["0.0.0.0/0"]
+    description = "HTTP from Anywhere"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   ingress {
-    description      = "TLS from Anywhere"
-    from_port        = 443
-    to_port          = 443
-    protocol         = "tcp"
-    cidr_blocks      = ["0.0.0.0/0"]
-  }  
+    description = "TLS from Anywhere"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
 
   egress {
-    from_port        = 0
-    to_port          = 0
-    protocol         = "-1"
-    cidr_blocks      = ["0.0.0.0/0"]
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   tags = {
@@ -54,14 +53,17 @@ data "aws_ami" "ubuntu" {
 }
 
 resource "aws_instance" "workstation" {
+
+  count = var.ws_count
+
   ami           = data.aws_ami.ubuntu.id
   instance_type = var.ws_instance_type
 
   subnet_id                   = data.aws_subnets.default.ids[0]
-  vpc_security_group_ids      = [aws_security_group.app_sg.id]
+  vpc_security_group_ids      = [aws_security_group.ws_sg.id]
   associate_public_ip_address = true
 
-  iam_instance_profile = "LabInstanceProfile"
+  iam_instance_profile = var.ws_iam_profile
 
   user_data = file("userdata.sh")
 
@@ -74,13 +76,14 @@ resource "aws_instance" "workstation" {
   }
 
   metadata_options {
-    http_endpoint = "enabled"
+    http_endpoint          = "enabled"
     instance_metadata_tags = "enabled"
+    http_tokens            = "optional"
   }
-  
+
   tags = {
-    Name  : lower(var.owner)
+    Name : var.ws_count == 1 ? "${lower(var.owner)}" : "${lower(var.owner)}${count.index}"
     Layer : "computing"
-  }  
+  }
 }
 
