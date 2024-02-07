@@ -169,9 +169,13 @@ set -g status-right '%H:%M:%S'
 set-option -g window-size smallest
 EOF_
 
-# Install AWS CLI
+# Install AWS CLI v2
 
-apt install awscli -y
+apt install unzip -y
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+unzip awscliv2.zip
+./aws/install
+rm -rf awscliv2.zip aws
 
 # Install Terraform
 
