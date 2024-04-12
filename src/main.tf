@@ -93,7 +93,7 @@ resource "aws_instance" "workstation" {
 
 resource "aws_eip" "workstationip" {
   instance = aws_instance.workstation.id
-  vpc      = true
+  domain   = "vpc"
 
   tags = {
     Name  : "${lower(var.owner)}-workstation"
