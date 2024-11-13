@@ -171,5 +171,25 @@ EOF
 sudo systemctl start ttyd
 sudo systemctl enable ttyd
 
+# Configure admin
+
 echo -e "workshop@2024\nworkshop@2024" | passwd ubuntu
+
+# Configure users
+
+wget -O /etc/skel/.tmux.conf https://raw.githubusercontent.com/gpakosz/.tmux/master/.tmux.conf
+wget -O /etc/skel/.tmux.conf.local https://raw.githubusercontent.com/gpakosz/.tmux/master/.tmux.conf.local
+  
+echo '[ "$TMUX" ] || tmux attach || tmux' >> /etc/skel/.profile
+
+PASS=nworkshop@2024
+for i in {1..30}
+do
+  sudo useradd -m desk$i
+  sudo usermod -aG docker desk$i
+  # sudo usermod -aG sudo desk$i
+  sudo chsh -s /usr/bin/bash desk$i
+  yes $PASS | sudo passwd desk$i
+done
+ 
 
