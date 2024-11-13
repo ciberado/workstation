@@ -110,8 +110,9 @@ set-option -g window-size smallest
 EOF_
 
 # Install AWS CLI
-
-apt install awscli -y
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+unzip awscliv2.zip
+sudo ./aws/install
 
 # Install Terraform
 
@@ -169,3 +170,4 @@ sudo systemctl start ttyd
 sudo systemctl enable ttyd
 
 echo -e "workshop@2024\nworkshop@2024" | passwd ubuntu
+
