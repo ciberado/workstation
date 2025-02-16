@@ -4,6 +4,21 @@ apt upgrade --assume-yes -y
 snap install core; snap refresh core
 sudo apt-get install software-properties-common -y
 
+
+# Install AWS CLI
+apt install -y unzip
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+unzip awscliv2.zip
+sudo ./aws/install
+rm -fr aws awscliv2.zip
+
+# Set Public IP
+
+INSTANCE_PUBLIC_IP=$(aws ec2 allocate-address --domain vpc --query "PublicIp" --output text)
+TOKEN=`curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600"`
+INSTANCE_ID=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-id)
+
+
 cat << 'EOF' > /usr/local/bin/dns.sh 
 #!/bin/bash
 
@@ -109,12 +124,6 @@ set -g status-right '%H:%M:%S'
 set-option -g window-size smallest
 EOF_
 
-# Install AWS CLI
-apt install -y unzip
-curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-unzip awscliv2.zip
-sudo ./aws/install
-rm -fr aws awscliv2.zip
 
 # Install Terraform
 
@@ -182,14 +191,12 @@ wget -O /etc/skel/.tmux.conf.local https://raw.githubusercontent.com/gpakosz/.tm
   
 echo '[ "$TMUX" ] || tmux attach || tmux' >> /etc/skel/.profile
 
-PASS=nworkshop@2025
+PASS=workshop@2025
 for i in {1..30}
 do
-  sudo useradd -m student$i
-  sudo usermod -aG docker student$i
-  # sudo usermod -aG sudo student$i
-  sudo chsh -s /usr/bin/bash student$i
-  yes $PASS | sudo passwd student$i
+  sudo useradd -m seat$i
+  sudo usermod -aG docker seat$i
+  # sudo usermod -aG sudo seat$i
+  sudo chsh -s /usr/bin/bash seat$i
+  yes $PASS | sudo passwd seat$i
 done
- 
-
