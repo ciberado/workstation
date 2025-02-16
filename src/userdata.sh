@@ -182,14 +182,14 @@ wget -O /etc/skel/.tmux.conf.local https://raw.githubusercontent.com/gpakosz/.tm
   
 echo '[ "$TMUX" ] || tmux attach || tmux' >> /etc/skel/.profile
 
-PASS=nworkshop@2024
+PASS=nworkshop@2025
 for i in {1..30}
 do
-  sudo useradd -m desk$i
-  sudo usermod -aG docker desk$i
-  # sudo usermod -aG sudo desk$i
-  sudo chsh -s /usr/bin/bash desk$i
-  yes $PASS | sudo passwd desk$i
+  sudo useradd -m student$i
+  sudo usermod -aG docker student$i
+  # sudo usermod -aG sudo student$i
+  sudo chsh -s /usr/bin/bash student$i
+  yes $PASS | sudo passwd student$i
 done
  
 
