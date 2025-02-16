@@ -173,7 +173,7 @@ sudo systemctl enable ttyd
 
 # Configure admin
 
-echo -e "workshop@2024\nworkshop@2024" | passwd ubuntu
+echo -e "workshop@2025\nworkshop@2025" | passwd ubuntu
 
 # Configure users
 
