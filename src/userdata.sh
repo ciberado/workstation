@@ -20,32 +20,16 @@ INSTANCE_ID=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/
 
 aws ec2 associate-address --instance-id $INSTANCE_ID --public-ip $INSTANCE_PUBLIC_IP
 
+# DNS update
+
 NAME=$(curl http://169.254.169.254/latest/meta-data/tags/instance/Name)
 INSTANCE_DNS=$NAME-workstation.aprender.cloud
 
-cat << EOF > /usr/local/bin/dns.sh 
-#!/bin/bash
-
-# DNS update
 echo "Server $NAME FQDN is $INSTANCE_DNS, reconfiguring to point to $INSTANCE_PUBLIC_IP."
 
 curl -s "https://wqgpdns5io5qghzjmr3l7kwcjq0glyqz.lambda-url.eu-west-1.on.aws/?name=$NAME-workstation&ip=$INSTANCE_PUBLIC_IP"; echo
 
 until [ "\$RESOLVED_IP" == "$INSTANCE_PUBLIC_IP" ]; do RESOLVED_IP=\$(dig +short $INSTANCE_DNS); echo -n .; sleep 1; done; echo
-EOF
-
-NAME=$(curl http://169.254.169.254/latest/meta-data/tags/instance/Name)
-INSTANCE_DNS=$NAME-workstation.aprender.cloud
-
-
-echo Registering DNS. *********************************************
-chmod +x /usr/local/bin/dns.sh
-bash /usr/local/bin/dns.sh
-
-crontab -l > mycron
-echo "@reboot bash /usr/local/bin/dns.sh" >> mycron
-crontab mycron
-rm mycron
 
 echo Installing nginx
 
