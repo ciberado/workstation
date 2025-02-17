@@ -20,17 +20,13 @@ INSTANCE_ID=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/
 
 aws ec2 associate-address --instance-id $INSTANCE_ID --public-ip $INSTANCE_PUBLIC_IP
 
-cat << 'EOF' > /usr/local/bin/dns.sh 
-#!/bin/bash
-
-# DNS update
 NAME=$(curl http://169.254.169.254/latest/meta-data/tags/instance/Name)
 INSTANCE_DNS=$NAME-workstation.aprender.cloud
 
-INSTANCE_ID=$(curl -s  http://instance-data/latest/meta-data/instance-id)
-INSTANCE_EC2_DNS=$(curl -s http://169.254.169.254/latest/meta-data/public-hostname) 
-INSTANCE_PUBLIC_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)
+cat << EOF > /usr/local/bin/dns.sh 
+#!/bin/bash
 
+# DNS update
 echo "Server $NAME FQDN is $INSTANCE_DNS, reconfiguring to point to $INSTANCE_PUBLIC_IP."
 
 curl -s "https://wqgpdns5io5qghzjmr3l7kwcjq0glyqz.lambda-url.eu-west-1.on.aws/?name=$NAME-workstation&ip=$INSTANCE_PUBLIC_IP"; echo
