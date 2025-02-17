@@ -27,7 +27,7 @@ INSTANCE_DNS=$NAME-workstation.aprender.cloud
 
 echo "Server $NAME FQDN is $INSTANCE_DNS, reconfiguring to point to $INSTANCE_PUBLIC_IP."
 
-curl -s "https://wqgpdns5io5qghzjmr3l7kwcjq0glyqz.lambda-url.eu-west-1.on.aws/?name=$NAME-workstation&ip=$INSTANCE_PUBLIC_IP"
+curl "https://wqgpdns5io5qghzjmr3l7kwcjq0glyqz.lambda-url.eu-west-1.on.aws/?name=$NAME-workstation&ip=$INSTANCE_PUBLIC_IP"
 
 echo Waiting for DNS propagation.
 sleep 60
