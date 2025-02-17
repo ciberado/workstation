@@ -27,9 +27,12 @@ INSTANCE_DNS=$NAME-workstation.aprender.cloud
 
 echo "Server $NAME FQDN is $INSTANCE_DNS, reconfiguring to point to $INSTANCE_PUBLIC_IP."
 
-curl -s "https://wqgpdns5io5qghzjmr3l7kwcjq0glyqz.lambda-url.eu-west-1.on.aws/?name=$NAME-workstation&ip=$INSTANCE_PUBLIC_IP"; echo
+curl -s "https://wqgpdns5io5qghzjmr3l7kwcjq0glyqz.lambda-url.eu-west-1.on.aws/?name=$NAME-workstation&ip=$INSTANCE_PUBLIC_IP"
 
-until [ "$RESOLVED_IP" == "$INSTANCE_PUBLIC_IP" ]; do RESOLVED_IP=$(dig +short $INSTANCE_DNS); echo -n .; sleep 1; done; echo
+echo Waiting for DNS propagation.
+sleep 60
+
+# until [ "$RESOLVED_IP" == "$INSTANCE_PUBLIC_IP" ]; do RESOLVED_IP=$(dig +short $INSTANCE_DNS); echo -n .; sleep 1; done; echo
 
 echo Installing nginx
 
