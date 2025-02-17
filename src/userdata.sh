@@ -20,6 +20,9 @@ INSTANCE_ID=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/
 
 aws ec2 associate-address --instance-id $INSTANCE_ID --public-ip $INSTANCE_PUBLIC_IP
 
+echo Waiting for IP association.
+sleep 60
+
 # DNS update
 
 NAME=$(curl http://169.254.169.254/latest/meta-data/tags/instance/Name)
