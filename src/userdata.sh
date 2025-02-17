@@ -29,7 +29,7 @@ echo "Server $NAME FQDN is $INSTANCE_DNS, reconfiguring to point to $INSTANCE_PU
 
 curl -s "https://wqgpdns5io5qghzjmr3l7kwcjq0glyqz.lambda-url.eu-west-1.on.aws/?name=$NAME-workstation&ip=$INSTANCE_PUBLIC_IP"; echo
 
-until [ "\$RESOLVED_IP" == "$INSTANCE_PUBLIC_IP" ]; do RESOLVED_IP=\$(dig +short $INSTANCE_DNS); echo -n .; sleep 1; done; echo
+until [ "$RESOLVED_IP" == "$INSTANCE_PUBLIC_IP" ]; do RESOLVED_IP=$(dig +short $INSTANCE_DNS); echo -n .; sleep 1; done; echo
 
 echo Installing nginx
 
