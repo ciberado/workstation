@@ -287,10 +287,12 @@ fi
 chmod +x /usr/local/bin/register-termfleet.sh
 
 # Create configuration file
+# Use WORKSTATION_NAME from environment (set by launch.sh) or fallback to hostname
+FINAL_WORKSTATION_NAME="${WORKSTATION_NAME:-$(hostname)}"
 cat << EOF > /etc/termfleet.conf
 # Termfleet Configuration
 TERMFLEET_ENDPOINT=${TERMFLEET_ENDPOINT}
-WORKSTATION_NAME=$(hostname)
+WORKSTATION_NAME=${FINAL_WORKSTATION_NAME}
 EOF
 
 # Enable and start the service
@@ -299,6 +301,7 @@ systemctl enable termfleet-registration.service
 systemctl start termfleet-registration.service
 
 echo "Termfleet registration service installed and started"
+echo "Workstation name: ${FINAL_WORKSTATION_NAME}"
 echo "Check status: systemctl status termfleet-registration.service"
 echo "View logs: journalctl -u termfleet-registration.service -f"
 

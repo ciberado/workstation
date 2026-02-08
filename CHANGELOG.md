@@ -1,5 +1,56 @@
 # Changelog
 
+## 2.2.0 - 2026-02-08
+
+### Added
+
+#### Custom Workstation Names
+- Support for specifying workstation name during launch
+- Command-line parameter: `./launch.sh <iam_role> [workstation_name]`
+- Name validation before launch:
+  - 3-63 characters length
+  - Alphanumeric and hyphens only
+  - Must start and end with alphanumeric character
+  - Matches Termfleet DNS requirements
+- Instance Name tag set to workstation name (for AWS Console identification)
+- Environment variable support: `WORKSTATION_NAME` passed to userdata.sh
+- Automatic fallback to AWS hostname if not specified
+
+#### Launch Script Improvements
+- Enhanced usage documentation with examples
+- Workstation name validation with clear error messages
+- Temporary userdata file generation with environment variables
+- Automatic cleanup of temporary files
+
+### Changed
+- launch.sh now accepts optional second parameter for workstation name
+- userdata.sh uses provided WORKSTATION_NAME or falls back to hostname
+- Instance tags dynamically updated based on workstation name
+- Registration configuration uses custom name instead of AWS hostname
+
+### Technical Details
+- Name validation regex: `^[a-zA-Z0-9][a-zA-Z0-9-]{1,61}[a-zA-Z0-9]$`
+- Environment variable passed via modified userdata
+- Termfleet registration uses custom name for DNS subdomain
+- Instance tag: `Name=${WORKSTATION_NAME}` or `Name=workstation`
+
+### Examples
+```bash
+# Default behavior (use AWS hostname)
+./launch.sh LabRole
+
+# Custom workstation names
+./launch.sh LabRole desk1
+./launch.sh LabRole training-vm-01
+./launch.sh LabRole workstation-123
+
+# Via environment variable
+export WORKSTATION_NAME=my-desk
+./launch.sh LabRole
+```
+
+---
+
 ## 2.1.0 - 2026-02-08
 
 ### Added

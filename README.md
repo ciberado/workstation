@@ -34,7 +34,25 @@ This project provides automated setup scripts for launching EC2 workstations wit
 
 ```bash
 cd src
+./launch.sh LabRole [workstation_name]
+```
+
+**Parameters:**
+- `LabRole` - IAM role name for EC2 instance (required)
+- `workstation_name` - Custom name for workstation (optional)
+  - Must be 3-63 characters
+  - Alphanumeric and hyphens only
+  - Must start and end with alphanumeric character
+  - Example: `desk1`, `workstation-01`, `training-vm`
+
+**Examples:**
+```bash
+# Use AWS hostname (default)
 ./launch.sh LabRole
+
+# Specify custom workstation name
+./launch.sh LabRole desk1
+./launch.sh LabRole training-workstation-01
 ```
 
 This will:
@@ -178,13 +196,31 @@ workstation/
 
 ### Change Workstation Name
 
+**Option 1: Specify during launch (recommended)**
 ```bash
-# In launch.sh, add before launch:
-WORKSTATION_NAME="my-desk-01"
-
-# Or in userdata.sh:
-WORKSTATION_NAME=my-desk-01
+./launch.sh LabRole my-desk-01
 ```
+
+**Option 2: Set environment variable**
+```bash
+export WORKSTATION_NAME="my-desk-01"
+./launch.sh LabRole
+```
+
+The workstation name:
+- Will be used for Termfleet registration
+- Appears in the Termfleet dashboard
+- Becomes part of DNS subdomain (e.g., `my-desk-01.ws.aprender.cloud`)
+- Is validated before launch (alphanumeric + hyphen, 3-63 chars)
+
+**Validation Rules:**
+- ✅ `desk1` - Valid
+- ✅ `training-vm-01` - Valid
+- ✅ `workstation-123` - Valid
+- ❌ `desk_1` - Invalid (underscores not allowed)
+- ❌ `my.desk` - Invalid (dots not allowed)
+- ❌ `-desk1` - Invalid (can't start with hyphen)
+- ❌ `ws` - Invalid (too short, minimum 3 chars)
 
 ### Modify Instance Type
 

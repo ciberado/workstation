@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # Launch EC2 instance with ttyd and Caddy setup
-# Usage: ./launch.sh <iam_role_name>
-# Example: ./launch.sh LabRole
+# Usage: ./launch.sh <iam_role_name> [workstation_name]
+# Example: ./launch.sh LabRole desk1
 
 set -e
 
@@ -23,12 +23,30 @@ KEY_NAME="ttyd-key"
 # Check if IAM role name is provided (mandatory)
 if [ -z "$1" ]; then
     echo "ERROR: IAM role name is required"
-    echo "Usage: $0 <iam_role_name>"
-    echo "Example: $0 LabRole"
+    echo "Usage: $0 <iam_role_name> [workstation_name]"
+    echo "Example: $0 LabRole desk1"
     exit 1
 fi
 
 ROLE_NAME="$1"
+WORKSTATION_NAME="${2:-}"
+
+# Validate workstation name if provided
+if [ -n "${WORKSTATION_NAME}" ]; then
+    # Must be alphanumeric with hyphens, 3-63 characters
+    if ! echo "${WORKSTATION_NAME}" | grep -qE '^[a-zA-Z0-9][a-zA-Z0-9-]{1,61}[a-zA-Z0-9]$'; then
+        echo "ERROR: Invalid workstation name '${WORKSTATION_NAME}'"
+        echo "Name must:"
+        echo "  - Be 3-63 characters long"
+        echo "  - Start and end with alphanumeric character"
+        echo "  - Contain only alphanumeric characters and hyphens"
+        exit 1
+    fi
+    echo "Workstation name: ${WORKSTATION_NAME}"
+else
+    echo "Workstation name: Will use AWS hostname"
+fi
+
 echo "Will attach IAM role to EC2 instance: ${ROLE_NAME}"
     
     # Check if role exists and has EC2 trust policy
@@ -158,6 +176,24 @@ else
     fi
 fi
 
+# Prepare userdata with workstation name if provided
+if [ -n "${WORKSTATION_NAME}" ]; then
+    echo "Preparing userdata with workstation name: ${WORKSTATION_NAME}"
+    USERDATA_FILE="${SCRIPT_DIR}/.userdata.tmp"
+    # Add environment variable at the beginning of userdata
+    {
+        echo "#!/bin/bash"
+        echo "export WORKSTATION_NAME='${WORKSTATION_NAME}'"
+        echo ""
+        tail -n +2 "${SCRIPT_DIR}/userdata.sh"  # Skip shebang from original
+    } > "${USERDATA_FILE}"
+    USERDATA_ARG="file://${USERDATA_FILE}"
+    TAG_NAME="${WORKSTATION_NAME}"
+else
+    USERDATA_ARG="file://${SCRIPT_DIR}/userdata.sh"
+    TAG_NAME="workstation"
+fi
+
 # Launch instance
 echo "Launching instance..."
 INSTANCE_ID=$(aws ec2 run-instances \
@@ -169,10 +205,13 @@ INSTANCE_ID=$(aws ec2 run-instances \
     ${INSTANCE_PROFILE_ARG} \
     --metadata-options "HttpTokens=optional,HttpPutResponseHopLimit=1,HttpEndpoint=enabled" \
     --block-device-mappings "[{\"DeviceName\":\"/dev/sda1\",\"Ebs\":{\"VolumeSize\":${VOLUME_SIZE},\"VolumeType\":\"${VOLUME_TYPE}\",\"DeleteOnTermination\":true}}]" \
-    --user-data file://${SCRIPT_DIR}/userdata.sh \
-    --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=workstation}]" \
+    --user-data "${USERDATA_ARG}" \
+    --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=${TAG_NAME}}]" \
     --query 'Instances[0].InstanceId' \
     --output text)
+
+# Clean up temporary userdata file if created
+[ -f "${SCRIPT_DIR}/.userdata.tmp" ] && rm -f "${SCRIPT_DIR}/.userdata.tmp"
 
 echo "Instance launched: ${INSTANCE_ID}"
 echo "Waiting for instance to start..."
