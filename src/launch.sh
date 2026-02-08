@@ -6,6 +6,9 @@
 
 set -e
 
+# Disable AWS CLI pager to prevent interactive pauses
+export AWS_PAGER=""
+
 # Get script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -179,7 +182,38 @@ aws ec2 wait instance-running \
     --region ${REGION} \
     --instance-ids ${INSTANCE_ID}
 
-# Get instance details
+# Check for existing Elastic IP with tag
+echo "Checking for existing Elastic IP..."
+EIP_ALLOCATION=$(aws ec2 describe-addresses \
+    --region ${REGION} \
+    --filters "Name=tag:Name,Values=workstation-eip" \
+    --query 'Addresses[0].AllocationId' \
+    --output text 2>/dev/null || echo "None")
+
+if [ "${EIP_ALLOCATION}" = "None" ] || [ -z "${EIP_ALLOCATION}" ]; then
+    echo "No existing Elastic IP found. Allocating new one..."
+    EIP_ALLOCATION=$(aws ec2 allocate-address \
+        --region ${REGION} \
+        --domain vpc \
+        --tag-specifications "ResourceType=elastic-ip,Tags=[{Key=Name,Value=workstation-eip}]" \
+        --query 'AllocationId' \
+        --output text)
+    echo "Elastic IP allocated: ${EIP_ALLOCATION}"
+else
+    echo "Using existing Elastic IP: ${EIP_ALLOCATION}"
+fi
+
+# Associate Elastic IP with instance
+echo "Associating Elastic IP with instance..."
+ASSOCIATION_ID=$(aws ec2 associate-address \
+    --region ${REGION} \
+    --instance-id ${INSTANCE_ID} \
+    --allocation-id ${EIP_ALLOCATION} \
+    --query 'AssociationId' \
+    --output text)
+echo "Elastic IP associated: ${ASSOCIATION_ID}"
+
+# Get instance details with Elastic IP
 INSTANCE_INFO=$(aws ec2 describe-instances \
     --region ${REGION} \
     --instance-ids ${INSTANCE_ID} \
@@ -201,12 +235,14 @@ echo "Instance launched successfully!"
 echo "======================================"
 echo "Instance ID: ${INSTANCE_ID}"
 echo "Public DNS: ${PUBLIC_DNS}"
-echo "Public IP: ${PUBLIC_IP}"
+echo "Public IP (Elastic): ${PUBLIC_IP}"
 if [ "${IAM_ROLE}" != "None" ]; then
     echo "IAM Role: ${IAM_ROLE}"
 else
     echo "IAM Role: Not attached"
 fi
+echo ""
+echo "Note: Elastic IP is tagged as 'workstation-eip' and will be reused on next launch."
 echo ""
 echo "SSH Access:"
 if [ -f "${KEY_FILE}" ]; then
