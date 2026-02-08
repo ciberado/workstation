@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.2.1 - 2026-02-08
+
+### Changed
+- Updated to Ubuntu 24.04 LTS (Noble Numbat) from 22.04 LTS (Jammy)
+- AMI filter updated to use gp3-based Ubuntu 24.04 images
+- Maintains all existing functionality and compatibility
+
+---
+
 ## 2.2.0 - 2026-02-08
 
 ### Added
