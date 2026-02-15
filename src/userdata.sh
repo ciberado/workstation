@@ -115,12 +115,13 @@ usermod -aG docker ubuntu
 # Install and configure tmux
 
 apt install wget tmux -y
-wget -O ~/.tmux.conf https://raw.githubusercontent.com/gpakosz/.tmux/master/.tmux.conf
-wget -O ~/.tmux.conf.local https://raw.githubusercontent.com/gpakosz/.tmux/master/.tmux.conf.local
+wget -O /home/ubuntu/.tmux.conf https://raw.githubusercontent.com/gpakosz/.tmux/master/.tmux.conf
+wget -O /home/ubuntu/.tmux.conf.local https://raw.githubusercontent.com/gpakosz/.tmux/master/.tmux.conf.local
+chown ubuntu:ubuntu /home/ubuntu/.tmux.conf /home/ubuntu/.tmux.conf.local
 
 ## tmux on login
 
-cat << EOF >> ~/.bashrc
+cat << EOF >> /home/ubuntu/.bashrc
 if [[ -z \$TMUX ]]; then
   tmux attach -t default || tmux new -s default
 fi
