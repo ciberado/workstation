@@ -1,17 +1,20 @@
 #!/bin/bash
 
 # Launch EC2 instance with ttyd and Caddy setup
-# Usage: ./launch.sh <iam_role_name> [workstation_name]
+# Usage: ./launch.sh [workstation_name]
+#        ./launch.sh [iam_role_name] [workstation_name]
 # 
-# Basic usage (single workstation with AWS hostname):
-#   ./launch.sh LabRole
+# Defaults:
+#   - IAM Role: LabRole
+#   - Termfleet: https://termfleet.aprender.cloud
 #
-# Named workstation with custom domain (Termfleet integration):
-#   TERMFLEET_ENDPOINT=https://termfleet.example.com \
-#   BASE_DOMAIN=example.com \
-#   ./launch.sh LabRole desk1
+# Examples:
+#   ./launch.sh                    # Use AWS hostname
+#   ./launch.sh desk1              # Named workstation (uses LabRole default)
+#   ./launch.sh CustomRole desk2   # Explicit role and workstation name
 #
-# Note: When using named workstations, TERMFLEET_ENDPOINT and BASE_DOMAIN are required
+# Note: Termfleet server enforces domain structure (e.g., desk1.ws.aprender.cloud)
+#       Users cannot bypass the domain prefix configured on the server
 
 set -e
 
@@ -29,18 +32,34 @@ VOLUME_TYPE="gp3"
 SECURITY_GROUP_NAME="ttyd-access"
 KEY_NAME="ttyd-key"
 
-# Check if IAM role name is provided (mandatory)
+# Parse arguments: support both old and new usage patterns
+# New: ./launch.sh [workstation_name]  (uses LabRole default)
+# Old: ./launch.sh <iam_role> [workstation_name]  (explicit role)
 if [ -z "$1" ]; then
-    echo "ERROR: IAM role name is required"
-    echo "Usage: $0 <iam_role_name> [workstation_name]"
-    echo "Example: $0 LabRole desk1"
-    exit 1
+    # No arguments - use defaults
+    ROLE_NAME="LabRole"
+    WORKSTATION_NAME=""
+elif [ -z "$2" ]; then
+    # One argument - could be role or workstation name
+    # If it looks like a valid workstation name (lowercase, hyphens), treat as workstation
+    # Otherwise treat as IAM role
+    if echo "$1" | grep -qE '^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$'; then
+        ROLE_NAME="LabRole"
+        WORKSTATION_NAME="$1"
+    else
+        ROLE_NAME="$1"
+        WORKSTATION_NAME=""
+    fi
+else
+    # Two arguments - explicit role and workstation name
+    ROLE_NAME="$1"
+    WORKSTATION_NAME="$2"
 fi
 
-ROLE_NAME="$1"
-WORKSTATION_NAME="${2:-}"
-BASE_DOMAIN="${BASE_DOMAIN:-}"
-TERMFLEET_ENDPOINT="${TERMFLEET_ENDPOINT:-}"
+TERMFLEET_ENDPOINT="${TERMFLEET_ENDPOINT:-https://termfleet.aprender.cloud}"
+
+# Display configuration
+echo "IAM Role: ${ROLE_NAME}"
 
 # Validate workstation name if provided
 if [ -n "${WORKSTATION_NAME}" ]; then
@@ -54,30 +73,10 @@ if [ -n "${WORKSTATION_NAME}" ]; then
         exit 1
     fi
     echo "Workstation name: ${WORKSTATION_NAME}"
-else
-    echo "Workstation name: Will use AWS hostname"
-fi
-
-# Validate BASE_DOMAIN if workstation name is provided
-if [ -n "${WORKSTATION_NAME}" ] && [ -z "${BASE_DOMAIN}" ]; then
-    echo "ERROR: BASE_DOMAIN environment variable must be set when using custom workstation name"
-    echo "Example: BASE_DOMAIN=example.com ./launch.sh LabRole desk1"
-    exit 1
-fi
-
-if [ -n "${BASE_DOMAIN}" ]; then
-    echo "Base domain: ${BASE_DOMAIN}"
-fi
-
-# Validate TERMFLEET_ENDPOINT if workstation name is provided
-if [ -n "${WORKSTATION_NAME}" ] && [ -z "${TERMFLEET_ENDPOINT}" ]; then
-    echo "ERROR: TERMFLEET_ENDPOINT environment variable must be set when using custom workstation name"
-    echo "Example: TERMFLEET_ENDPOINT=https://termfleet.example.com BASE_DOMAIN=example.com ./launch.sh LabRole desk1"
-    exit 1
-fi
-
-if [ -n "${TERMFLEET_ENDPOINT}" ]; then
     echo "Termfleet endpoint: ${TERMFLEET_ENDPOINT}"
+    echo "Domain will be assigned by Termfleet server (e.g., ${WORKSTATION_NAME}.ws.aprender.cloud)"
+else
+    echo "Workstation name: Will use AWS hostname (no Termfleet integration)"
 fi
 
 echo "Will attach IAM role to EC2 instance: ${ROLE_NAME}"
@@ -209,7 +208,7 @@ else
     fi
 fi
 
-# Prepare userdata with workstation name and base domain if provided
+# Prepare userdata with workstation name and Termfleet endpoint if provided
 if [ -n "${WORKSTATION_NAME}" ]; then
     echo "Preparing userdata with workstation name: ${WORKSTATION_NAME}"
     USERDATA_FILE="${SCRIPT_DIR}/.userdata.tmp"
@@ -217,9 +216,6 @@ if [ -n "${WORKSTATION_NAME}" ]; then
     {
         echo "#!/bin/bash"
         echo "export WORKSTATION_NAME='${WORKSTATION_NAME}'"
-        if [ -n "${BASE_DOMAIN}" ]; then
-            echo "export BASE_DOMAIN='${BASE_DOMAIN}'"
-        fi
         if [ -n "${TERMFLEET_ENDPOINT}" ]; then
             echo "export TERMFLEET_ENDPOINT='${TERMFLEET_ENDPOINT}'"
         fi
@@ -453,8 +449,8 @@ if [ "${REUSING_INSTANCE}" = true ]; then
 else
     echo "Web Terminal (after setup completes, ~5-10 minutes):"
 fi
-if [ -n "${WORKSTATION_NAME}" ] && [ -n "${BASE_DOMAIN}" ]; then
-    echo "  https://${WORKSTATION_NAME}.${BASE_DOMAIN}"
+if [ -n "${WORKSTATION_NAME}" ]; then
+    echo "  https://${WORKSTATION_NAME}.ws.aprender.cloud  (Termfleet-assigned domain)"
     echo "  (fallback: https://${PUBLIC_DNS})"
 else
     echo "  https://${PUBLIC_DNS}"

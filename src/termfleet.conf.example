@@ -1,8 +1,0 @@
-# Termfleet Configuration
-# This file should be placed at /etc/termfleet.conf
-
-# Termfleet server endpoint
-TERMFLEET_ENDPOINT=https://termfleet.example.com
-
-# Workstation name (optional, defaults to hostname)
-# WORKSTATION_NAME=desk1

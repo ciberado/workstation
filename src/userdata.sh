@@ -10,11 +10,13 @@ snap install core; snap refresh core
 # =================================================================
 
 # Configuration
-TERMFLEET_ENDPOINT="${TERMFLEET_ENDPOINT:-https://termfleet.example.com}"
-FINAL_WORKSTATION_NAME="${WORKSTATION_NAME:-$(hostname)}"
-FINAL_BASE_DOMAIN="${BASE_DOMAIN:-}"
+TERMFLEET_ENDPOINT="${TERMFLEET_ENDPOINT:-https://termfleet.aprender.cloud}"
+# WORKSTATION_NAME is set by launch.sh if user provided a name, otherwise empty
+# If empty, we use AWS hostname mode (no Termfleet registration)
+FINAL_WORKSTATION_NAME="${WORKSTATION_NAME:-}"
 LOG_FILE="/var/log/termfleet-registration.log"
 DNS_REGISTERED=false
+ASSIGNED_DOMAIN=""  # Will be populated by Termfleet registration response
 
 log_message() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"
@@ -55,6 +57,15 @@ register_workstation_early() {
         if [ "$http_code" = "200" ] || [ "$http_code" = "201" ]; then
             log_message "DNS registration successful! DNS will propagate during tool installations."
             log_message "Response: $body"
+            
+            # Extract domain_name from Termfleet response (server enforces domain structure)
+            ASSIGNED_DOMAIN=$(echo "$body" | grep -o '"domain_name":"[^"]*"' | cut -d'"' -f4)
+            if [ -n "$ASSIGNED_DOMAIN" ]; then
+                log_message "Termfleet assigned domain: $ASSIGNED_DOMAIN"
+            else
+                log_message "WARNING: Could not extract domain from response"
+            fi
+            
             return 0
         fi
         
@@ -71,8 +82,9 @@ register_workstation_early() {
     return 1
 }
 
-# Trigger DNS registration immediately (if using custom domain)
-if [ -n "${FINAL_BASE_DOMAIN}" ] && [ -n "${FINAL_WORKSTATION_NAME}" ]; then
+# Trigger DNS registration only if workstation name was explicitly provided
+# (not AWS hostname mode)
+if [ -n "${FINAL_WORKSTATION_NAME}" ]; then
     IP_ADDRESS=$(get_ip_address)
     if [ -n "$IP_ADDRESS" ]; then
         if register_workstation_early "$IP_ADDRESS"; then
@@ -80,20 +92,21 @@ if [ -n "${FINAL_BASE_DOMAIN}" ] && [ -n "${FINAL_WORKSTATION_NAME}" ]; then
             DNS_START_TIME=$(date +%s)
             log_message "DNS registration triggered. Installing tools while DNS propagates..."
         else
-            log_message "WARNING: Early registration failed, will continue without custom domain"
+            log_message "WARNING: Early registration failed, will use AWS hostname fallback"
         fi
     else
         log_message "WARNING: Could not determine IP address for registration"
     fi
 else
-    log_message "No custom domain configured, will use AWS hostname for Caddy"
+    log_message "No workstation name provided, will use AWS hostname for Caddy (no Termfleet registration)"
 fi
 
 # Docker
 apt install apt-transport-https ca-certificates curl software-properties-common -y
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
-add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu focal stable" -y
-apt install docker-ce -y
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+apt update
+apt install docker-ce docker-ce-cli containerd.io -y
 usermod -aG docker ubuntu
 
 
@@ -120,10 +133,9 @@ unzip awscliv2.zip
 rm -rf awscliv2.zip aws
 
 # Install Terraform
-
-apt install -y gnupg software-properties-common curl
-curl -fsSL https://apt.releases.hashicorp.com/gpg | sudo apt-key add -
-apt-add-repository "deb [arch=amd64] https://apt.releases.hashicorp.com jammy main" -y
+apt install -y gnupg software-properties-common
+wget -O- https://apt.releases.hashicorp.com/gpg | gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
+echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/hashicorp.list
 apt update 
 apt install terraform -y
 
@@ -205,12 +217,11 @@ wait_for_dns() {
     return 1
 }
 
-if [ "$DNS_REGISTERED" = true ]; then
-    FULL_DOMAIN="${FINAL_WORKSTATION_NAME}.${FINAL_BASE_DOMAIN}"
+if [ "$DNS_REGISTERED" = true ] && [ -n "$ASSIGNED_DOMAIN" ]; then
     log_message "=== Checking DNS Propagation Before Caddy Setup ==="
-    wait_for_dns "$FULL_DOMAIN"
+    wait_for_dns "$ASSIGNED_DOMAIN"
 else
-    log_message "Skipping DNS propagation check (no custom domain registered)"
+    log_message "Skipping DNS propagation check (no domain assigned by Termfleet)"
 fi
 
 # Install and configure Caddy
@@ -222,12 +233,13 @@ apt update
 apt install caddy -y
 
 # Create Caddyfile for reverse proxy to ttyd
-# Use custom domain if BASE_DOMAIN is set, otherwise fallback to AWS hostname
+# Use domain assigned by Termfleet server (enforces ws.aprender.cloud structure)
+# Falls back to AWS hostname if Termfleet registration failed
 
-if [ -n "${BASE_DOMAIN:-}" ] && [ -n "${WORKSTATION_NAME:-}" ]; then
-    # Use custom domain for Termfleet integration
-    CADDY_DOMAIN="${WORKSTATION_NAME}.${BASE_DOMAIN}"
-    echo "Configuring Caddy with custom domain: ${CADDY_DOMAIN}"
+if [ -n "$ASSIGNED_DOMAIN" ]; then
+    # Use domain assigned by Termfleet (server enforces domain structure)
+    CADDY_DOMAIN="$ASSIGNED_DOMAIN"
+    echo "Configuring Caddy with Termfleet-assigned domain: ${CADDY_DOMAIN}"
 else
     # Fallback to AWS public hostname
     TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
@@ -263,8 +275,8 @@ echo "Caddy started with domain: ${CADDY_DOMAIN}"
 echo "Installing Termfleet registration service for future use..."
 
 # Termfleet endpoint configuration
-# Set this to your Termfleet server URL (customize before deployment)
-TERMFLEET_ENDPOINT="${TERMFLEET_ENDPOINT:-https://termfleet.example.com}"
+# Use the endpoint from environment (already set at top of script)
+# TERMFLEET_ENDPOINT is already set to https://termfleet.aprender.cloud
 
 # Copy registration script from repository or download
 # Option 1: If files are in the image/repository
@@ -421,26 +433,28 @@ fi
 # Make registration script executable
 chmod +x /usr/local/bin/register-termfleet.sh
 
-# Create configuration file
-# Use WORKSTATION_NAME from environment (set by launch.sh) or fallback to hostname
-FINAL_WORKSTATION_NAME="${WORKSTATION_NAME:-$(hostname)}"
-FINAL_BASE_DOMAIN="${BASE_DOMAIN:-}"
+# Create configuration file for future registrations
+# Use WORKSTATION_NAME from environment (set by launch.sh) - may be empty for AWS hostname mode
+# For the systemd service, we need a name, so use hostname as fallback for service config only
+SERVICE_WORKSTATION_NAME="${WORKSTATION_NAME:-$(hostname)}"
 cat << EOF > /etc/termfleet.conf
 # Termfleet Configuration
 TERMFLEET_ENDPOINT=${TERMFLEET_ENDPOINT}
-WORKSTATION_NAME=${FINAL_WORKSTATION_NAME}
-BASE_DOMAIN=${FINAL_BASE_DOMAIN}
+WORKSTATION_NAME=${SERVICE_WORKSTATION_NAME}
 EOF
 
-# Enable the service for future use (but don't start now - initial registration already done)
+# Only enable the service if we're using Termfleet (workstation name was provided)
 systemctl daemon-reload
-systemctl enable termfleet-registration.service
-
-echo "Termfleet registration service installed (enabled for future re-registrations)"
-echo "Workstation name: ${FINAL_WORKSTATION_NAME}"
-echo "Initial registration completed early in script - DNS propagated during tool installations"
-echo "Service will run on future boots or can be triggered manually:"
-echo "  systemctl start termfleet-registration.service"
+if [ -n "${WORKSTATION_NAME}" ]; then
+    systemctl enable termfleet-registration.service
+    echo "Termfleet registration service installed and enabled"
+    echo "Workstation name: ${WORKSTATION_NAME}"
+    echo "Service will run on future boots or can be triggered manually:"
+    echo "  systemctl start termfleet-registration.service"
+else
+    echo "Termfleet registration service installed but NOT enabled (AWS hostname mode)"
+    echo "To enable later: systemctl enable termfleet-registration.service"
+fi
 echo "Check status: systemctl status termfleet-registration.service"
 echo "View logs: journalctl -u termfleet-registration.service -f"
 

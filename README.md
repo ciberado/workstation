@@ -27,49 +27,79 @@ This project provides automated setup scripts for launching EC2 workstations wit
 
 - AWS account with EC2 permissions
 - AWS CLI configured
-- IAM role for EC2 instances (e.g., `LabRole`)
-- Termfleet server deployed and accessible
+- IAM role for EC2 instances (defaults to `LabRole`)
+- Termfleet server deployed (defaults to `termfleet.aprender.cloud`)
 
 ### Launch Workstation
 
 ```bash
 cd src
-./launch.sh LabRole [workstation_name]
+./launch.sh [workstation_name]
 ```
 
 **Parameters:**
-- `LabRole` - IAM role name for EC2 instance (required)
 - `workstation_name` - Custom name for workstation (optional)
   - Must be 3-63 characters
-  - Alphanumeric and hyphens only
+  - Alphanumeric and hyphens only (lowercase recommended)
   - Must start and end with alphanumeric character
   - Example: `desk1`, `workstation-01`, `training-vm`
 
+**Defaults:**
+- IAM Role: `LabRole`
+- Termfleet: `https://termfleet.aprender.cloud`
+
+**Environment Variables:**
+- `TERMFLEET_ENDPOINT` - Override default Termfleet server URL
+  - Default: `https://termfleet.aprender.cloud`
+  - Example: `export TERMFLEET_ENDPOINT=https://custom-termfleet.com`
+
 **Examples:**
 ```bash
-# Use AWS hostname (default)
-./launch.sh LabRole
+# Use AWS hostname (no Termfleet integration)
+./launch.sh
 
-# Specify custom workstation name
-./launch.sh LabRole desk1
-./launch.sh LabRole training-workstation-01
+# Named workstation with defaults (LabRole + termfleet.aprender.cloud)
+./launch.sh desk1
+
+# Named workstation with custom Termfleet server
+export TERMFLEET_ENDPOINT=https://custom-termfleet.com
+./launch.sh desk2
+
+# Explicit IAM role and workstation name
+./launch.sh CustomRole desk3
 ```
+
+**Note:** When using Termfleet integration, the domain structure (e.g., `ws.aprender.cloud`) is enforced server-side. Users cannot bypass or modify the subdomain prefix configured on the Termfleet server.
 
 This will:
 1. Create security group (opens port 443 for HTTPS)
-2. Find latest Ubuntu 22.04 AMI
+2. Find latest Ubuntu 24.04 AMI
 3. Launch t3.medium instance with 8GB storage
 4. Execute userdata.sh (installs ttyd, Caddy, tools)
-5. Register with Termfleet management server
+5. Register with Termfleet management server (termfleet.aprender.cloud)
 
 ### Access Workstation
 
 After launch completes:
 
+**For named workstations (e.g., `./launch.sh desk1`):**
+
+1. **Check Termfleet dashboard:**
+   - Visit: `https://termfleet.aprender.cloud`
+   - See workstation status (starting → online)
+   - Get assigned domain (e.g., `desk1.ws.aprender.cloud`)
+
+2. **Access via browser:**
+   ```
+   https://desk1.ws.aprender.cloud
+   ```
+
+**For AWS hostname workstations (e.g., `./launch.sh`):**
+
 1. **Find public hostname:**
    ```bash
    # From launch script output
-   # Example: ec2-3-14-159-26.compute-1.amazonaws.com
+   # Example: ec2-3-14-159-26.us-east-1.compute.amazonaws.com
    ```
 
 2. **Access via browser:**
@@ -77,24 +107,20 @@ After launch completes:
    https://<public-hostname>
    ```
 
-3. **Login credentials:**
-   - Username: `ubuntu`
-   - Password: `arch@1234`
-
-4. **Check Termfleet dashboard:**
-   - Visit your Termfleet server web UI
-   - See workstation status (starting → online)
-   - Get assigned domain (e.g., `desk1.ws.aprender.cloud`)
+**Login credentials (both types):**
+- Username: `ubuntu`
+- Password: `arch@1234`
 
 ## Termfleet Integration
 
 ### What is Termfleet?
 
 Termfleet is a centralized management system for workstations. It provides:
-- Automatic DNS subdomain assignment via Spaceship.com
+- Automatic DNS subdomain assignment via Spaceship.com (e.g., desk1.ws.aprender.cloud)
 - Real-time health monitoring
 - Status dashboard for all workstations
 - Lifecycle management (starting → online → unknown → terminated)
+- Server-side domain enforcement (users cannot bypass subdomain structure)
 
 ### How Integration Works
 

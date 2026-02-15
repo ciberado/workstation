@@ -5,3 +5,14 @@
 *lock*
 
 .env
+
+# Optional files - created inline by userdata.sh
+src/register-termfleet.sh
+src/termfleet-registration.service
+src/termfleet.conf.example
+
+# Temporary files created by launch.sh
+src/.userdata.tmp
+
+# AWS key pairs
+*.pem
