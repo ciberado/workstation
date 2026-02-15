@@ -102,6 +102,10 @@ curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /
 apt update
 apt install caddy -y
 
+# Give Caddy permission to bind to privileged ports (443, 80)
+setcap 'cap_net_bind_service=+ep' /usr/bin/caddy
+log_message "Caddy installed with network capabilities"
+
 # Create script that waits for stable IP, registers DNS, and configures Caddy
 cat << 'EOFSCRIPT' > /usr/local/bin/setup-caddy-dns.sh
 #!/bin/bash
@@ -168,14 +172,45 @@ else
 fi
 
 log "Configuring Caddy for: $DOMAIN"
+
+# Wait for DNS to resolve (if using custom domain)
+if [ -n "$WORKSTATION_NAME" ]; then
+    log "Waiting for DNS resolution..."
+    DNS_RETRIES=0
+    while [ $DNS_RETRIES -lt 30 ]; do
+        if nslookup "$DOMAIN" > /dev/null 2>&1; then
+            log "DNS resolved successfully for $DOMAIN"
+            break
+        fi
+        DNS_RETRIES=$((DNS_RETRIES + 1))
+        sleep 2
+    done
+    
+    if [ $DNS_RETRIES -ge 30 ]; then
+        log "WARNING: DNS not resolving yet, but continuing with configuration"
+    fi
+fi
+
+# Configure Caddyfile - Caddy 2 will automatically handle HTTPS
 cat > /etc/caddy/Caddyfile << EOF
-https://$DOMAIN {
+{
+	# Disable admin API for security
+	admin off
+}
+
+# Main domain configuration with automatic HTTPS
+$DOMAIN {
 	reverse_proxy localhost:7681 {
 		header_up Host {host}
 		header_up X-Real-IP {remote}
 		header_up X-Forwarded-For {remote}
 		header_up X-Forwarded-Proto {scheme}
 	}
+}
+
+# Fallback for direct IP access
+http://:80 {
+	redir https://$DOMAIN{uri} permanent
 }
 EOF
 
