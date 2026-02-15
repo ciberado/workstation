@@ -81,7 +81,7 @@ After=syslog.target
 After=network.target
 
 [Service]
-ExecStart=/usr/local/bin/ttyd -p 7681 -i 127.0.0.1 -W -t fontSize=16 -t fontFamily="'Courier New', Courier, monospace" su - ubuntu
+ExecStart=/usr/local/bin/ttyd -p 7681 -i 127.0.0.1 -W -t fontSize=14 -t fontFamily="'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Menlo, 'DejaVu Sans Mono', 'Lucida Console', monospace" -t rendererType=canvas su - ubuntu
 Type=simple
 Restart=always
 User=root
