@@ -27,9 +27,12 @@ wget -O /home/ubuntu/.tmux.conf https://raw.githubusercontent.com/gpakosz/.tmux/
 wget -O /home/ubuntu/.tmux.conf.local https://raw.githubusercontent.com/gpakosz/.tmux/master/.tmux.conf.local
 chown ubuntu:ubuntu /home/ubuntu/.tmux.conf /home/ubuntu/.tmux.conf.local
 
-# Note: tmux auto-start disabled for web terminal compatibility
-# Users can manually run 'tmux' if needed
-# Tmux inside web terminals causes character rendering issues
+# Attach to tmux if not already in a tmux session
+cat << EOF >> /home/ubuntu/.bashrc
+if [[ -z \$TMUX ]]; then
+  tmux attach -t default || tmux new -s default
+fi
+EOF
 
 # Install AWS CLI v2
 apt install unzip -y
@@ -76,7 +79,7 @@ export LANG=en_US.UTF-8
 export LC_ALL=en_US.UTF-8
 
 # Configure ttyd
-wget -O /usr/local/bin/ttyd https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.x86_64
+wget -O /usr/local/bin/ttyd https://github.com/tsl0922/ttyd/releases/download/1.4.2/ttyd_linux.i386
 chmod +x /usr/local/bin/ttyd
 
 cat << EOF > /etc/systemd/system/ttyd.service
