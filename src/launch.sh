@@ -413,6 +413,11 @@ PUBLIC_DNS=$(echo ${INSTANCE_INFO} | jq -r '.PublicDnsName')
 PUBLIC_IP=$(echo ${INSTANCE_INFO} | jq -r '.PublicIpAddress')
 IAM_ROLE=$(echo ${INSTANCE_INFO} | jq -r '.IamInstanceProfile.Arn // "None"')
 
+# Note: DNS registration happens automatically on the instance after EIP stabilizes
+if [ -n "${WORKSTATION_NAME}" ]; then
+    echo "Note: Instance will auto-register DNS once EIP is detected (~30 seconds)"
+fi
+
 # Only wait for SSH if we have a valid key file
 if [ "${KEY_FILE_AVAILABLE}" = true ]; then
     echo "Waiting for SSH to be available..."

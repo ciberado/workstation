@@ -3,95 +3,13 @@ apt update
 apt upgrade --assume-yes -y
 snap install core; snap refresh core
 
-# Early DNS Registration - triggers DNS propagation during tool installation
-TERMFLEET_ENDPOINT="${TERMFLEET_ENDPOINT:-https://termfleet.aprender.cloud}"
-FINAL_WORKSTATION_NAME="${WORKSTATION_NAME:-}"
-LOG_FILE="/var/log/termfleet-registration.log"
-DNS_REGISTERED=false
-ASSIGNED_DOMAIN=""
+LOG_FILE="/var/log/workstation-setup.log"
 
 log_message() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"
 }
 
-get_ip_address() {
-    # Try AWS metadata with IMDSv2
-    local token=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600" 2>/dev/null || echo "")
-    if [ -n "$token" ]; then
-        local ip=$(curl -s -H "X-aws-ec2-metadata-token: $token" http://169.254.169.254/latest/meta-data/public-ipv4 2>/dev/null || echo "")
-        if [ -n "$ip" ]; then
-            echo "$ip"
-            return 0
-        fi
-    fi
-    # Fallback to primary network interface IP
-    hostname -I | awk '{print $1}'
-}
-
-register_workstation_early() {
-    local ip="$1"
-    local max_retries=3
-    local retry_delay=5
-    local retries=0
-    
-    log_message "=== Early DNS Registration ==="
-    log_message "Registering: $FINAL_WORKSTATION_NAME IP: $ip"
-    
-    while [ $retries -lt $max_retries ]; do
-        response=$(curl -s -w "\n%{http_code}" -X POST \
-            -H "Content-Type: application/json" \
-            -d "{\"name\":\"$FINAL_WORKSTATION_NAME\",\"ip\":\"$ip\"}" \
-            "$TERMFLEET_ENDPOINT/api/workstations/register" 2>&1)
-        
-        http_code=$(echo "$response" | tail -n1)
-        body=$(echo "$response" | sed '$d')
-        
-        if [ "$http_code" = "200" ] || [ "$http_code" = "201" ]; then
-            log_message "DNS registration successful!"
-            log_message "Response: $body"
-            
-            # Extract domain from response
-            local extracted_domain=$(echo "$body" | grep -o '"domain_name":"[^"]*"' | cut -d'"' -f4)
-            if [ -n "$extracted_domain" ]; then
-                log_message "Assigned domain: $extracted_domain"
-                echo "$extracted_domain" > /tmp/termfleet_domain
-            else
-                log_message "WARNING: Could not extract domain"
-            fi
-            
-            return 0
-        fi
-        
-        log_message "Registration failed with HTTP $http_code: $body"
-        
-        retries=$((retries + 1))
-        if [ $retries -lt $max_retries ]; then
-            log_message "Retrying in ${retry_delay}s (attempt $retries/$max_retries)"
-            sleep $retry_delay
-        fi
-    done
-    
-    log_message "ERROR: Failed to register after $max_retries attempts"
-    return 1
-}
-
-# Trigger DNS registration if workstation name provided
-if [ -n "${FINAL_WORKSTATION_NAME}" ]; then
-    IP_ADDRESS=$(get_ip_address)
-    if [ -n "$IP_ADDRESS" ]; then
-        if register_workstation_early "$IP_ADDRESS"; then
-            DNS_REGISTERED=true
-            DNS_START_TIME=$(date +%s)
-            log_message "DNS registration triggered, installing tools..."
-        else
-            log_message "WARNING: Early registration failed"
-        fi
-    else
-        log_message "WARNING: Could not determine IP"
-    fi
-else
-    log_message "No name provided, using AWS hostname"
-fi
+log_message "Starting workstation setup..."
 
 # Docker
 apt install apt-transport-https ca-certificates curl software-properties-common -y
@@ -169,56 +87,76 @@ EOF
 sudo systemctl start ttyd
 sudo systemctl enable ttyd
 
-# Wait for DNS propagation if DNS was registered
-wait_for_dns() {
-    local domain="$1"
-    local max_attempts=30
-    local attempt=0
-    
-    log_message "Checking DNS for: $domain"
-    
-    while [ $attempt -lt $max_attempts ]; do
-        if nslookup "$domain" &>/dev/null; then
-            local elapsed=$(($(date +%s) - DNS_START_TIME))
-            log_message "DNS resolved in ${elapsed}s"
-            return 0
-        fi
-        
-        attempt=$((attempt + 1))
-        log_message "DNS check $attempt/$max_attempts"
-        sleep 10
-    done
-    
-    log_message "WARNING: DNS timeout, Caddy will retry"
-    return 1
-}
-
-if [ "$DNS_REGISTERED" = true ] && [ -n "$ASSIGNED_DOMAIN" ]; then
-    log_message "Checking DNS before Caddy setup"
-    wait_for_dns "$ASSIGNED_DOMAIN"
-else
-    log_message "Skipping DNS check"
-fi
-
-# Install Caddy
+# Install Caddy (configuration will happen after EIP association)
+log_message "Installing Caddy..."
 apt install -y debian-keyring debian-archive-keyring apt-transport-https curl
 curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
 curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
 apt update
 apt install caddy -y
 
-# Configure Caddy with Termfleet domain or AWS hostname
-if [ -f /tmp/termfleet_domain ]; then
-    CADDY_DOMAIN=$(cat /tmp/termfleet_domain)
+# Create script that waits for stable IP, registers DNS, and configures Caddy
+cat << 'EOFSCRIPT' > /usr/local/bin/setup-caddy-dns.sh
+#!/bin/bash
+TERMFLEET_ENDPOINT="${TERMFLEET_ENDPOINT:-https://termfleet.aprender.cloud}"
+WORKSTATION_NAME="${WORKSTATION_NAME:-}"
+LOG="/var/log/workstation-setup.log"
+
+log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG"; }
+
+get_public_ip() {
+    TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+    curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/public-ipv4
+}
+
+# Wait for IP to stabilize (detects EIP association)
+log "Waiting for IP to stabilize..."
+PREV_IP=""
+STABLE_COUNT=0
+while [ $STABLE_COUNT -lt 6 ]; do
+    CURRENT_IP=$(get_public_ip)
+    if [ "$CURRENT_IP" = "$PREV_IP" ] && [ -n "$CURRENT_IP" ]; then
+        STABLE_COUNT=$((STABLE_COUNT + 1))
+    else
+        STABLE_COUNT=0
+        PREV_IP="$CURRENT_IP"
+    fi
+    sleep 5
+done
+
+log "IP stable: $CURRENT_IP"
+
+# Register with Termfleet if workstation name provided
+if [ -n "$WORKSTATION_NAME" ]; then
+    log "Registering with Termfleet..."
+    RESP=$(curl -s -w "\n%{http_code}" -X POST \
+        -H "Content-Type: application/json" \
+        -d "{\"name\":\"$WORKSTATION_NAME\",\"ip\":\"$CURRENT_IP\"}" \
+        "$TERMFLEET_ENDPOINT/api/workstations/register" 2>&1)
+    
+    CODE=$(echo "$RESP" | tail -n1)
+    BODY=$(echo "$RESP" | sed '$d')
+    
+    if [ "$CODE" = "200" ] || [ "$CODE" = "201" ]; then
+        log "DNS registered successfully"
+        DOMAIN=$(echo "$BODY" | grep -o '"domain_name":"[^"]*"' | cut -d'"' -f4)
+        if [ -n "$DOMAIN" ]; then
+            log "Assigned domain: $DOMAIN"
+        else
+            DOMAIN="${WORKSTATION_NAME}.ws.aprender.cloud"
+        fi
+    else
+        log "Registration failed (HTTP $CODE), using fallback"
+        DOMAIN="${WORKSTATION_NAME}.ws.aprender.cloud"
+    fi
 else
     TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
-    CADDY_DOMAIN=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/public-hostname)
+    DOMAIN=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/public-hostname)
 fi
 
-log_message "Configuring Caddy for: ${CADDY_DOMAIN}"
-
-cat << EOF > /etc/caddy/Caddyfile
-https://${CADDY_DOMAIN} {
+log "Configuring Caddy for: $DOMAIN"
+cat > /etc/caddy/Caddyfile << EOF
+https://$DOMAIN {
 	reverse_proxy localhost:7681 {
 		header_up Host {host}
 		header_up X-Real-IP {remote}
@@ -228,12 +166,32 @@ https://${CADDY_DOMAIN} {
 }
 EOF
 
-log_message "Caddy configured for: ${CADDY_DOMAIN}"
+systemctl enable caddy
+systemctl restart caddy
+log "Caddy configured and started"
+EOFSCRIPT
 
-# Start Caddy
-sudo systemctl enable caddy
-sudo systemctl start caddy
-log_message "Caddy started"
+chmod +x /usr/local/bin/setup-caddy-dns.sh
+
+# Create systemd service
+cat > /etc/systemd/system/setup-caddy-dns.service << 'EOFSERVICE'
+[Unit]
+Description=Setup Caddy after EIP association
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/setup-caddy-dns.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOFSERVICE
+
+systemctl daemon-reload
+systemctl enable setup-caddy-dns.service
+log_message "Caddy DNS service created and enabled"
 
 # Install Termfleet registration service for future use
 if [ -f /tmp/register-termfleet.sh ]; then
