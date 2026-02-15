@@ -88,7 +88,7 @@ echo "Domain will be assigned by Termfleet server (e.g., ${WORKSTATION_NAME}.ws.
 
 # Check that Termfleet service is active before proceeding
 echo "Checking Termfleet service availability..."
-HEALTH_URL="${TERMFLEET_ENDPOINT}/health"
+HEALTH_URL="${TERMFLEET_ENDPOINT}/api/health"
 HEALTH_RESPONSE=$(curl -sf "${HEALTH_URL}" 2>/dev/null || echo "")
 
 if [ -z "${HEALTH_RESPONSE}" ]; then
@@ -97,7 +97,7 @@ if [ -z "${HEALTH_RESPONSE}" ]; then
     exit 1
 fi
 
-HEALTH_STATUS=$(echo "${HEALTH_RESPONSE}" | jq -r '.status' 2>/dev/null || echo "")
+HEALTH_STATUS=$(echo "${HEALTH_RESPONSE}" | jq -r '.data.status' 2>/dev/null || echo "")
 if [ "${HEALTH_STATUS}" != "ok" ]; then
     echo "ERROR: Termfleet service health check failed"
     echo "Response: ${HEALTH_RESPONSE}"
