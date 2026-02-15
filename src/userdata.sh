@@ -28,9 +28,11 @@ wget -O /home/ubuntu/.tmux.conf.local https://raw.githubusercontent.com/gpakosz/
 chown ubuntu:ubuntu /home/ubuntu/.tmux.conf /home/ubuntu/.tmux.conf.local
 
 # Attach to tmux if not already in a tmux session
+# When tmux exits, restart bash to re-trigger tmux (keeps tmux always running)
 cat << EOF >> /home/ubuntu/.bashrc
 if [[ -z \$TMUX ]]; then
   tmux attach -t default || tmux new -s default
+  exec bash
 fi
 EOF
 
