@@ -69,11 +69,13 @@ export TERMFLEET_ENDPOINT=https://custom-termfleet.com
 **Note:** Workstation name is mandatory. The domain structure (e.g., `desk1.ws.aprender.cloud`) is enforced server-side by Termfleet. Users cannot bypass or modify the subdomain prefix configured on the Termfleet server.
 
 This will:
-1. Create security group (opens port 443 for HTTPS)
-2. Find latest Ubuntu 24.04 AMI
-3. Launch t3.medium instance with 8GB storage
-4. Execute userdata.sh (installs ttyd, Caddy, tools)
-5. Register with Termfleet management server (termfleet.aprender.cloud)
+1. Verify Termfleet service is available
+2. Allocate or reuse dedicated Elastic IP
+3. Create security group (opens ports 22, 80, 443)
+4. Find latest Ubuntu 24.04 AMI
+5. Launch or restart t3.medium instance with 8GB storage
+6. Execute userdata.sh (installs ttyd, Caddy, tools)
+7. Register with Termfleet management server
 
 ### Access Workstation
 
