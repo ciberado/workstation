@@ -27,12 +27,9 @@ wget -O /home/ubuntu/.tmux.conf https://raw.githubusercontent.com/gpakosz/.tmux/
 wget -O /home/ubuntu/.tmux.conf.local https://raw.githubusercontent.com/gpakosz/.tmux/master/.tmux.conf.local
 chown ubuntu:ubuntu /home/ubuntu/.tmux.conf /home/ubuntu/.tmux.conf.local
 
-# tmux on login
-cat << EOF >> /home/ubuntu/.bashrc
-if [[ -z \$TMUX ]]; then
-  tmux attach -t default || tmux new -s default
-fi
-EOF
+# Note: tmux auto-start disabled for web terminal compatibility
+# Users can manually run 'tmux' if needed
+# Tmux inside web terminals causes character rendering issues
 
 # Install AWS CLI v2
 apt install unzip -y
