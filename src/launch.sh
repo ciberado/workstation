@@ -261,6 +261,43 @@ USERDATA_ARG="file://${USERDATA_FILE}"
 TAG_NAME="${WORKSTATION_NAME}"
 
 # =================================================================
+# Allocate Elastic IP early (before instance operations)
+# This ensures we have an IP available before launching/starting
+# =================================================================
+
+# Determine EIP tag name (per-workstation or shared)
+if [ -n "${WORKSTATION_NAME}" ]; then
+    EIP_TAG_NAME="workstation-eip-${WORKSTATION_NAME}"
+    echo "Using per-workstation Elastic IP for: ${WORKSTATION_NAME}"
+else
+    EIP_TAG_NAME="workstation-eip"
+    echo "Using shared Elastic IP (no workstation name specified)"
+fi
+
+# Check for existing Elastic IP with tag
+echo "Checking for existing Elastic IP tagged as: ${EIP_TAG_NAME}"
+EIP_ALLOCATION=$(aws ec2 describe-addresses \
+    --region ${REGION} \
+    --filters "Name=tag:Name,Values=${EIP_TAG_NAME}" \
+    --query 'Addresses[0].AllocationId' \
+    --output text 2>/dev/null || echo "None")
+
+if [ "${EIP_ALLOCATION}" = "None" ] || [ -z "${EIP_ALLOCATION}" ]; then
+    echo "No existing Elastic IP found. Allocating new one..."
+    EIP_ALLOCATION=$(aws ec2 allocate-address \
+        --region ${REGION} \
+        --domain vpc \
+        --tag-specifications "ResourceType=elastic-ip,Tags=[{Key=Name,Value=${EIP_TAG_NAME}}]" \
+        --query 'AllocationId' \
+        --output text)
+    echo "Elastic IP allocated: ${EIP_ALLOCATION}"
+else
+    echo "Using existing Elastic IP: ${EIP_ALLOCATION}"
+fi
+
+echo ""
+
+# =================================================================
 # Check for existing instance with the same name
 # If found: start it if stopped, or display info if running
 # If not found: launch a new instance
@@ -362,53 +399,27 @@ fi
 # Clean up temporary userdata file if created
 [ -f "${SCRIPT_DIR}/.userdata.tmp" ] && rm -f "${SCRIPT_DIR}/.userdata.tmp"
 
-# Determine EIP tag name (per-workstation or shared)
-if [ -n "${WORKSTATION_NAME}" ]; then
-    EIP_TAG_NAME="workstation-eip-${WORKSTATION_NAME}"
-    echo "Using per-workstation Elastic IP for: ${WORKSTATION_NAME}"
-else
-    EIP_TAG_NAME="workstation-eip"
-    echo "Using shared Elastic IP (no workstation name specified)"
-fi
+# =================================================================
+# Associate Elastic IP with instance
+# EIP was allocated earlier, now associate it
+# =================================================================
 
-# Check for existing Elastic IP with tag
-echo "Checking for existing Elastic IP tagged as: ${EIP_TAG_NAME}"
-EIP_ALLOCATION=$(aws ec2 describe-addresses \
+echo "Checking Elastic IP association..."
+CURRENT_ASSOCIATION=$(aws ec2 describe-addresses \
     --region ${REGION} \
-    --filters "Name=tag:Name,Values=${EIP_TAG_NAME}" \
-    --query 'Addresses[0].AllocationId' \
+    --allocation-ids ${EIP_ALLOCATION} \
+    --query 'Addresses[0].InstanceId' \
     --output text 2>/dev/null || echo "None")
 
-if [ "${EIP_ALLOCATION}" = "None" ] || [ -z "${EIP_ALLOCATION}" ]; then
-    echo "No existing Elastic IP found. Allocating new one..."
-    EIP_ALLOCATION=$(aws ec2 allocate-address \
-        --region ${REGION} \
-        --domain vpc \
-        --tag-specifications "ResourceType=elastic-ip,Tags=[{Key=Name,Value=${EIP_TAG_NAME}}]" \
-        --query 'AllocationId' \
-        --output text)
-    echo "Elastic IP allocated: ${EIP_ALLOCATION}"
-    NEED_ASSOCIATION=true
+if [ "${CURRENT_ASSOCIATION}" = "${INSTANCE_ID}" ]; then
+    echo "Elastic IP is already associated with this instance"
+    NEED_ASSOCIATION=false
 else
-    echo "Using existing Elastic IP: ${EIP_ALLOCATION}"
-    
-    # Check if EIP is already associated with this instance
-    CURRENT_ASSOCIATION=$(aws ec2 describe-addresses \
-        --region ${REGION} \
-        --allocation-ids ${EIP_ALLOCATION} \
-        --query 'Addresses[0].InstanceId' \
-        --output text 2>/dev/null || echo "None")
-    
-    if [ "${CURRENT_ASSOCIATION}" = "${INSTANCE_ID}" ]; then
-        echo "Elastic IP is already associated with this instance"
-        NEED_ASSOCIATION=false
-    else
-        if [ "${CURRENT_ASSOCIATION}" != "None" ] && [ -n "${CURRENT_ASSOCIATION}" ]; then
-            echo "Elastic IP is currently associated with different instance: ${CURRENT_ASSOCIATION}"
-            echo "Will reassociate to current instance"
-        fi
-        NEED_ASSOCIATION=true
+    if [ "${CURRENT_ASSOCIATION}" != "None" ] && [ -n "${CURRENT_ASSOCIATION}" ]; then
+        echo "Elastic IP is currently associated with different instance: ${CURRENT_ASSOCIATION}"
+        echo "Will reassociate to current instance"
     fi
+    NEED_ASSOCIATION=true
 fi
 
 # Associate Elastic IP with instance (if needed)
