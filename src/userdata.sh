@@ -109,11 +109,20 @@ log_message "Caddy installed with network capabilities"
 # Create script that waits for stable IP, registers DNS, and configures Caddy
 cat << 'EOFSCRIPT' > /usr/local/bin/setup-caddy-dns.sh
 #!/bin/bash
+
+# Source config file if available (for systemd service calls)
+[ -f /etc/termfleet.conf ] && source /etc/termfleet.conf
+
+# Fallback defaults
 TERMFLEET_ENDPOINT="${TERMFLEET_ENDPOINT:-https://termfleet.aprender.cloud}"
 WORKSTATION_NAME="${WORKSTATION_NAME:-}"
 LOG="/var/log/workstation-setup.log"
 
-log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG"; }
+log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] [setup-caddy-dns] $1" | tee -a "$LOG"; }
+
+log "Starting Caddy DNS setup..."
+log "WORKSTATION_NAME: ${WORKSTATION_NAME:-<not set>}"
+log "TERMFLEET_ENDPOINT: ${TERMFLEET_ENDPOINT}"
 
 get_public_ip() {
     TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
@@ -230,6 +239,7 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
+EnvironmentFile=/etc/termfleet.conf
 ExecStart=/usr/local/bin/setup-caddy-dns.sh
 RemainAfterExit=yes
 
@@ -410,4 +420,12 @@ else
 fi
 echo "Check status: systemctl status termfleet-registration.service"
 echo "View logs: journalctl -u termfleet-registration.service -f"
+
+# Now run the Caddy DNS setup (config file is now available)
+log_message "Running Caddy DNS setup..."
+/usr/local/bin/setup-caddy-dns.sh || log_message "WARNING: Caddy DNS setup failed, will retry on reboot"
+
+log_message "======================================"
+log_message "Workstation setup complete!"
+log_message "======================================"
 
