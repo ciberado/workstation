@@ -70,6 +70,18 @@ apt install -y jq
 # Configure ubuntu password
 echo "ubuntu:arch@1234" | chpasswd
 
+# Configure locale for UTF-8 support
+log_message "Configuring UTF-8 locale..."
+apt install -y locales
+locale-gen en_US.UTF-8
+update-locale LANG=en_US.UTF-8
+export LANG=en_US.UTF-8
+export LC_ALL=en_US.UTF-8
+
+# Install terminal fonts
+log_message "Installing terminal fonts..."
+apt install -y fonts-dejavu fonts-dejavu-core fonts-liberation fonts-firacode
+
 # Configure ttyd
 wget -O /usr/local/bin/ttyd https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.x86_64
 chmod +x /usr/local/bin/ttyd
@@ -81,7 +93,7 @@ After=syslog.target
 After=network.target
 
 [Service]
-ExecStart=/usr/local/bin/ttyd -p 7681 -i 127.0.0.1 -W -t fontSize=14 -t fontFamily="'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Menlo, 'DejaVu Sans Mono', 'Lucida Console', monospace" -t rendererType=canvas su - ubuntu
+ExecStart=/usr/local/bin/ttyd -p 7681 -i 127.0.0.1 -W -t fontSize=14 -t fontFamily="'Fira Code', 'DejaVu Sans Mono', 'Liberation Mono', 'SF Mono', Monaco, monospace" -t rendererType=canvas -t charset="UTF-8" bash -c "export LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8; su - ubuntu"
 Type=simple
 Restart=always
 User=root
