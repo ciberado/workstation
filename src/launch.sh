@@ -24,7 +24,7 @@ export AWS_PAGER=""
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Configuration
-REGION="us-east-1"
+REGION="${AWS_DEFAULT_REGION:-us-east-1}"
 INSTANCE_TYPE="t3.medium"
 VOLUME_SIZE=8
 VOLUME_TYPE="gp3"
@@ -48,9 +48,9 @@ fi
 # Pattern 2: ./launch.sh <iam_role> <workstation_name>  (explicit role)
 if [ -z "$2" ]; then
     # One argument - could be role or workstation name
-    # If it looks like a valid workstation name (lowercase, hyphens), treat as workstation
+    # If it looks like a valid workstation name (alphanumeric with hyphens, 3-63 chars), treat as workstation
     # Otherwise treat as IAM role (and require second argument)
-    if echo "$1" | grep -qE '^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$'; then
+    if echo "$1" | grep -qE '^[a-zA-Z0-9][a-zA-Z0-9-]{1,61}[a-zA-Z0-9]$'; then
         ROLE_NAME="LabRole"
         WORKSTATION_NAME="$1"
     else
@@ -108,55 +108,55 @@ echo "✓ Termfleet service is active and healthy"
 echo ""
 
 echo "Will attach IAM role to EC2 instance: ${ROLE_NAME}"
+
+# Check if role exists and has EC2 trust policy
+ROLE_INFO=$(aws iam get-role \
+    --role-name ${ROLE_NAME} \
+    --query 'Role' \
+    --output json 2>/dev/null || echo "{}")
+
+if [ "$ROLE_INFO" = "{}" ]; then
+    echo "ERROR: Role ${ROLE_NAME} does not exist."
+    exit 1
+fi
+
+echo "Role ${ROLE_NAME} exists. Checking trust policy..."
+
+# Check trust policy allows EC2
+TRUST_POLICY=$(echo ${ROLE_INFO} | jq -r '.AssumeRolePolicyDocument')
+if ! echo ${TRUST_POLICY} | grep -q "ec2.amazonaws.com"; then
+    echo "WARNING: Role ${ROLE_NAME} may not have EC2 in its trust policy."
+    echo "The instance may not be able to assume this role."
+fi
+
+# Check if instance profile exists
+PROFILE_EXISTS=$(aws iam get-instance-profile \
+    --instance-profile-name ${ROLE_NAME} \
+    --query 'InstanceProfile.InstanceProfileName' \
+    --output text 2>/dev/null || echo "None")
+
+if [ "${PROFILE_EXISTS}" = "None" ] || [ -z "${PROFILE_EXISTS}" ]; then
+    echo "Instance profile '${ROLE_NAME}' not found. Creating it..."
     
-    # Check if role exists and has EC2 trust policy
-    ROLE_INFO=$(aws iam get-role \
-        --role-name ${ROLE_NAME} \
-        --query 'Role' \
-        --output json 2>/dev/null || echo "{}")
+    # Create instance profile
+    aws iam create-instance-profile \
+        --instance-profile-name ${ROLE_NAME} 2>/dev/null || echo "Profile may already exist"
     
-    if [ "$ROLE_INFO" = "{}" ]; then
-        echo "ERROR: Role ${ROLE_NAME} does not exist."
-        exit 1
-    fi
-    
-    echo "Role ${ROLE_NAME} exists. Checking trust policy..."
-    
-    # Check trust policy allows EC2
-    TRUST_POLICY=$(echo ${ROLE_INFO} | jq -r '.AssumeRolePolicyDocument')
-    if ! echo ${TRUST_POLICY} | grep -q "ec2.amazonaws.com"; then
-        echo "WARNING: Role ${ROLE_NAME} may not have EC2 in its trust policy."
-        echo "The instance may not be able to assume this role."
-    fi
-    
-    # Check if instance profile exists
-    PROFILE_EXISTS=$(aws iam get-instance-profile \
+    # Attach role to instance profile
+    aws iam add-role-to-instance-profile \
         --instance-profile-name ${ROLE_NAME} \
-        --query 'InstanceProfile.InstanceProfileName' \
-        --output text 2>/dev/null || echo "None")
+        --role-name ${ROLE_NAME} 2>/dev/null || echo "Role may already be attached"
     
-    if [ "${PROFILE_EXISTS}" = "None" ] || [ -z "${PROFILE_EXISTS}" ]; then
-        echo "Instance profile '${ROLE_NAME}' not found. Creating it..."
-        
-        # Create instance profile
-        aws iam create-instance-profile \
-            --instance-profile-name ${ROLE_NAME} 2>/dev/null || echo "Profile may already exist"
-        
-        # Attach role to instance profile
-        aws iam add-role-to-instance-profile \
-            --instance-profile-name ${ROLE_NAME} \
-            --role-name ${ROLE_NAME} 2>/dev/null || echo "Role may already be attached"
-        
-        echo "Instance profile created and role attached."
-        
-        # Wait a bit for the profile to be available
-        echo "Waiting for instance profile to propagate..."
-        sleep 10
-    else
-        echo "Using existing instance profile: ${ROLE_NAME}"
-    fi
+    echo "Instance profile created and role attached."
     
-    INSTANCE_PROFILE_ARG="--iam-instance-profile Name=${ROLE_NAME}"
+    # Wait a bit for the profile to be available
+    echo "Waiting for instance profile to propagate..."
+    sleep 10
+else
+    echo "Using existing instance profile: ${ROLE_NAME}"
+fi
+
+INSTANCE_PROFILE_ARG="--iam-instance-profile Name=${ROLE_NAME}"
 
 echo "Finding latest Ubuntu 24.04 LTS AMI..."
 AMI_ID=$(aws ec2 describe-images \
@@ -265,14 +265,9 @@ TAG_NAME="${WORKSTATION_NAME}"
 # This ensures we have an IP available before launching/starting
 # =================================================================
 
-# Determine EIP tag name (per-workstation or shared)
-if [ -n "${WORKSTATION_NAME}" ]; then
-    EIP_TAG_NAME="workstation-eip-${WORKSTATION_NAME}"
-    echo "Using per-workstation Elastic IP for: ${WORKSTATION_NAME}"
-else
-    EIP_TAG_NAME="workstation-eip"
-    echo "Using shared Elastic IP (no workstation name specified)"
-fi
+# Determine EIP tag name (per-workstation)
+EIP_TAG_NAME="workstation-eip-${WORKSTATION_NAME}"
+echo "Using per-workstation Elastic IP for: ${WORKSTATION_NAME}"
 
 # Check for existing Elastic IP with tag
 echo "Checking for existing Elastic IP tagged as: ${EIP_TAG_NAME}"
@@ -289,7 +284,15 @@ if [ "${EIP_ALLOCATION}" = "None" ] || [ -z "${EIP_ALLOCATION}" ]; then
         --domain vpc \
         --tag-specifications "ResourceType=elastic-ip,Tags=[{Key=Name,Value=${EIP_TAG_NAME}}]" \
         --query 'AllocationId' \
-        --output text)
+        --output text 2>&1)
+    
+    # Check if allocation succeeded
+    if [ -z "${EIP_ALLOCATION}" ] || echo "${EIP_ALLOCATION}" | grep -qi "error\|failed"; then
+        echo "ERROR: Failed to allocate Elastic IP"
+        echo "Response: ${EIP_ALLOCATION}"
+        echo "You may have reached your EIP quota. Check AWS console."
+        exit 1
+    fi
     echo "Elastic IP allocated: ${EIP_ALLOCATION}"
 else
     echo "Using existing Elastic IP: ${EIP_ALLOCATION}"
@@ -477,16 +480,11 @@ else
     echo "IAM Role: Not attached"
 fi
 echo ""
-if [ -n "${WORKSTATION_NAME}" ]; then
-    echo "Elastic IP tagged as '${EIP_TAG_NAME}' (dedicated to this workstation)"
-    if [ "${REUSING_INSTANCE}" = true ]; then
-        echo "Instance and IP are persistent - safe to stop/start"
-    else
-        echo "This IP will be reused when you restart '${WORKSTATION_NAME}'"
-    fi
+echo "Elastic IP tagged as '${EIP_TAG_NAME}' (dedicated to this workstation)"
+if [ "${REUSING_INSTANCE}" = true ]; then
+    echo "Instance and IP are persistent - safe to stop/start"
 else
-    echo "Elastic IP tagged as 'workstation-eip' (shared)"
-    echo "Warning: Launching another instance will move this IP"
+    echo "This IP will be reused when you restart '${WORKSTATION_NAME}'"
 fi
 echo ""
 echo "SSH Access:"

@@ -1,4 +1,6 @@
 #!/bin/bash
+set -e
+
 apt update
 apt upgrade --assume-yes -y
 snap install core; snap refresh core
@@ -46,13 +48,18 @@ echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://
 apt update 
 apt install terraform -y
 
-# Install node with NVM
-curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.2/install.sh | bash
-export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
-[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  
-nvm install --lts
-n=$(which node);n=${n%/bin/node}; chmod -R 755 $n/bin/*; sudo cp -r $n/{bin,lib,share} /usr/local	
+# Install node with NVM (install as ubuntu user, then copy to system)
+# First install NVM for ubuntu user
+su - ubuntu -c 'curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.2/install.sh | bash'
+# Install LTS node as ubuntu user and copy to system path
+su - ubuntu -c 'export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" && nvm install --lts'
+# Copy node to system path for all users
+NODE_PATH=$(su - ubuntu -c 'export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" && which node')
+NODE_DIR=$(dirname $(dirname $NODE_PATH))
+cp -r $NODE_DIR/bin/* /usr/local/bin/ 2>/dev/null || true
+cp -r $NODE_DIR/lib/* /usr/local/lib/ 2>/dev/null || true
+cp -r $NODE_DIR/share/* /usr/local/share/ 2>/dev/null || true
+chmod -R 755 /usr/local/bin/node /usr/local/bin/npm /usr/local/bin/npx 2>/dev/null || true
 
 # Install kubectl and tools
 curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
@@ -145,9 +152,15 @@ if [ -n "$WORKSTATION_NAME" ]; then
         else
             DOMAIN="${WORKSTATION_NAME}.ws.aprender.cloud"
         fi
+        
+        # Disable this service - EIP is stable, no need to re-register on reboot
+        log "Disabling setup-caddy-dns.service (EIP is stable, registration complete)"
+        systemctl disable setup-caddy-dns.service 2>/dev/null || true
     else
         log "Registration failed (HTTP $CODE), using fallback"
         DOMAIN="${WORKSTATION_NAME}.ws.aprender.cloud"
+        # Keep service enabled to retry on next boot
+        log "Service will retry on next boot"
     fi
 else
     TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
@@ -193,12 +206,8 @@ systemctl daemon-reload
 systemctl enable setup-caddy-dns.service
 log_message "Caddy DNS service created and enabled"
 
-# Install Termfleet registration service for future use
-if [ -f /tmp/register-termfleet.sh ]; then
-    cp /tmp/register-termfleet.sh /usr/local/bin/
-    cp /tmp/termfleet-registration.service /etc/systemd/system/
-else
-    cat << 'REGSCRIPT' > /usr/local/bin/register-termfleet.sh
+# Install Termfleet registration service
+cat << 'REGSCRIPT' > /usr/local/bin/register-termfleet.sh
 #!/bin/bash
 set -e
 
@@ -301,9 +310,13 @@ main() {
     
     if register_workstation "$IP_ADDRESS"; then
         log "=== Registration complete ==="
+        # Disable this service - EIP is stable, no need to re-register on reboot
+        log "Disabling termfleet-registration.service (EIP is stable)"
+        systemctl disable termfleet-registration.service 2>/dev/null || true
         exit 0
     else
         log "=== Registration failed ==="
+        log "Service will retry on next boot"
         exit 1
     fi
 }
@@ -334,7 +347,6 @@ StartLimitBurst=5
 [Install]
 WantedBy=multi-user.target
 SERVFILE
-fi
 
 # Make registration script executable
 chmod +x /usr/local/bin/register-termfleet.sh

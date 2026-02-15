@@ -2,6 +2,7 @@
 
 # Destroy EC2 instance and free all associated resources
 # Usage: ./destroy.sh <workstation_name>
+#        ./destroy.sh -y <workstation_name>  (skip confirmation)
 #
 # This script will:
 # - Delete DNS registration from Termfleet
@@ -10,6 +11,7 @@
 #
 # Example:
 #   ./destroy.sh desk1
+#   ./destroy.sh -y desk1  # Skip confirmation prompt
 
 set -e
 
@@ -20,7 +22,17 @@ export AWS_PAGER=""
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Configuration
-REGION="us-east-1"
+REGION="${AWS_DEFAULT_REGION:-us-east-1}"
+
+# Parse flags
+SKIP_CONFIRM=false
+while getopts "y" opt; do
+    case $opt in
+        y) SKIP_CONFIRM=true ;;
+        *) ;;
+    esac
+done
+shift $((OPTIND-1))
 
 # Workstation name is MANDATORY
 if [ -z "$1" ]; then
@@ -56,11 +68,20 @@ echo "  - Elastic IP"
 echo "  - DNS registration"
 echo "  - All data on the instance"
 echo ""
-read -p "Are you sure you want to continue? (yes/no): " CONFIRM
 
-if [ "${CONFIRM}" != "yes" ]; then
-    echo "Destroy cancelled."
-    exit 0
+if [ "${SKIP_CONFIRM}" = false ]; then
+    # Only prompt if running interactively
+    if [ -t 0 ]; then
+        read -p "Are you sure you want to continue? (yes/no): " CONFIRM
+        if [ "${CONFIRM}" != "yes" ]; then
+            echo "Destroy cancelled."
+            exit 0
+        fi
+    else
+        echo "ERROR: Running non-interactively without -y flag."
+        echo "Use: $0 -y ${WORKSTATION_NAME}"
+        exit 1
+    fi
 fi
 
 echo ""
@@ -92,6 +113,7 @@ fi
 
 echo ""
 echo "Step 2: Deleting DNS registration from Termfleet..."
+DELETE_SUCCESS=false
 DELETE_RESPONSE=$(curl -sf -X DELETE "${TERMFLEET_ENDPOINT}/api/workstations/${WORKSTATION_NAME}" 2>/dev/null || echo "")
 
 if [ -n "${DELETE_RESPONSE}" ]; then
@@ -100,6 +122,7 @@ if [ -n "${DELETE_RESPONSE}" ]; then
         echo "✓ DNS registration deleted from Termfleet"
     else
         echo "⚠ DNS registration not found or already deleted"
+        DELETE_SUCCESS=false
     fi
 else
     echo "⚠ Could not connect to Termfleet (may be offline)"
@@ -132,10 +155,22 @@ else
     
     if [ "${ASSOCIATION_ID}" != "None" ] && [ -n "${ASSOCIATION_ID}" ]; then
         echo "Disassociating Elastic IP..."
-        aws ec2 disassociate-address \
-            --region ${REGION} \
-            --association-id ${ASSOCIATION_ID}
-        echo "✓ Elastic IP disassociated"
+        # Retry disassociation in case instance is in transition
+        for i in 1 2 3; do
+            if aws ec2 disassociate-address \
+                --region ${REGION} \
+                --association-id ${ASSOCIATION_ID} 2>/dev/null; then
+                echo "✓ Elastic IP disassociated"
+                break
+            else
+                if [ $i -lt 3 ]; then
+                    echo "Retrying disassociation (attempt $i)..."
+                    sleep 5
+                else
+                    echo "⚠ Could not disassociate EIP (may already be disassociated)"
+                fi
+            fi
+        done
     fi
     
     echo "Releasing Elastic IP..."
@@ -153,7 +188,8 @@ if [ -n "${INSTANCE_ID}" ]; then
     echo ""
     echo "Step 4: Terminating instance..."
     
-    # Check if instance is already terminated
+    # Check if instance is already terminated (initialize state if not set)
+    INSTANCE_STATE="${INSTANCE_STATE:-unknown}"
     if [ "${INSTANCE_STATE}" = "terminated" ]; then
         echo "Instance is already terminated"
     else
@@ -184,7 +220,7 @@ echo "======================================"
 echo "Workstation: ${WORKSTATION_NAME}"
 echo ""
 echo "Destroyed resources:"
-if [ -n "${DELETE_RESPONSE}" ] && [ "${DELETE_SUCCESS}" = "true" ]; then
+if [ "${DELETE_SUCCESS}" = "true" ]; then
     echo "  ✓ DNS registration (Termfleet)"
 else
     echo "  - DNS registration (not found or offline)"
