@@ -94,6 +94,31 @@ After launch completes:
 - Username: `ubuntu`
 - Password: `arch@1234`
 
+### Destroy Workstation
+
+To permanently destroy a workstation and free all associated resources:
+
+```bash
+cd src
+./destroy.sh <workstation_name>
+```
+
+**Parameters:**
+- `workstation_name` - Name of the workstation to destroy (**required**)
+
+**Example:**
+```bash
+./destroy.sh desk1
+```
+
+This will:
+1. Delete DNS registration from Termfleet
+2. Disassociate and release the Elastic IP
+3. Terminate the EC2 instance
+4. Remove all associated data
+
+**Note:** You will be prompted to confirm before destruction proceeds. This action is irreversible.
+
 ## Termfleet Integration
 
 ### What is Termfleet?
