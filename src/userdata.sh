@@ -89,7 +89,7 @@ After=syslog.target
 After=network.target
 
 [Service]
-ExecStart=/usr/local/bin/ttyd -p 7681 -i 127.0.0.1 -W -t fontSize=14 -t fontFamily="'Consolas', 'Monaco', 'Courier New', monospace" -t disableLeaveAlert=true -t rendererType=canvas -t charset="UTF-8" bash -c "export LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8; su - ubuntu"
+ExecStart=/usr/local/bin/ttyd -p 7681 -i 127.0.0.1 -W su - ubuntu
 Type=simple
 Restart=always
 User=root
