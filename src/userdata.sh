@@ -176,7 +176,7 @@ After=syslog.target
 After=network.target
 
 [Service]
-ExecStart=/usr/local/bin/ttyd -p 7681 -i 127.0.0.1 -W login
+ExecStart=/usr/local/bin/ttyd -p 7681 -i 127.0.0.1 -W -t fontSize=16 -t fontFamily="'Courier New', Courier, monospace" login
 Type=simple
 Restart=always
 User=root
