@@ -59,9 +59,11 @@ register_workstation_early() {
             log_message "Response: $body"
             
             # Extract domain_name from Termfleet response (server enforces domain structure)
-            ASSIGNED_DOMAIN=$(echo "$body" | grep -o '"domain_name":"[^"]*"' | cut -d'"' -f4)
-            if [ -n "$ASSIGNED_DOMAIN" ]; then
-                log_message "Termfleet assigned domain: $ASSIGNED_DOMAIN"
+            local extracted_domain=$(echo "$body" | grep -o '"domain_name":"[^"]*"' | cut -d'"' -f4)
+            if [ -n "$extracted_domain" ]; then
+                log_message "Termfleet assigned domain: $extracted_domain"
+                # Save to file so it's available later for Caddy configuration
+                echo "$extracted_domain" > /tmp/termfleet_domain
             else
                 log_message "WARNING: Could not extract domain from response"
             fi
@@ -236,9 +238,9 @@ apt install caddy -y
 # Use domain assigned by Termfleet server (enforces ws.aprender.cloud structure)
 # Falls back to AWS hostname if Termfleet registration failed
 
-if [ -n "$ASSIGNED_DOMAIN" ]; then
-    # Use domain assigned by Termfleet (server enforces domain structure)
-    CADDY_DOMAIN="$ASSIGNED_DOMAIN"
+# Check if Termfleet assigned a domain (saved during early registration)
+if [ -f /tmp/termfleet_domain ]; then
+    CADDY_DOMAIN=$(cat /tmp/termfleet_domain)
     echo "Configuring Caddy with Termfleet-assigned domain: ${CADDY_DOMAIN}"
 else
     # Fallback to AWS public hostname
@@ -246,6 +248,9 @@ else
     CADDY_DOMAIN=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/public-hostname)
     echo "Configuring Caddy with AWS hostname: ${CADDY_DOMAIN}"
 fi
+
+log_message "=== Configuring Caddy Reverse Proxy ==="
+log_message "Target domain: ${CADDY_DOMAIN}"
 
 cat << EOF > /etc/caddy/Caddyfile
 ${CADDY_DOMAIN} {
@@ -258,11 +263,15 @@ ${CADDY_DOMAIN} {
 }
 EOF
 
+log_message "Caddyfile created with domain: ${CADDY_DOMAIN}"
+log_message "Caddy will automatically obtain Let's Encrypt certificate"
+
 # Enable and start Caddy
 
 sudo systemctl enable caddy
 sudo systemctl start caddy
 
+log_message "Caddy service started - HTTPS should be available shortly"
 echo "Caddy started with domain: ${CADDY_DOMAIN}"
 
 # =================================================================

@@ -34,11 +34,11 @@ This project provides automated setup scripts for launching EC2 workstations wit
 
 ```bash
 cd src
-./launch.sh [workstation_name]
+./launch.sh <workstation_name>
 ```
 
 **Parameters:**
-- `workstation_name` - Custom name for workstation (optional)
+- `workstation_name` - Custom name for workstation (**required**)
   - Must be 3-63 characters
   - Alphanumeric and hyphens only (lowercase recommended)
   - Must start and end with alphanumeric character
@@ -55,9 +55,6 @@ cd src
 
 **Examples:**
 ```bash
-# Use AWS hostname (no Termfleet integration)
-./launch.sh
-
 # Named workstation with defaults (LabRole + termfleet.aprender.cloud)
 ./launch.sh desk1
 
@@ -69,7 +66,7 @@ export TERMFLEET_ENDPOINT=https://custom-termfleet.com
 ./launch.sh CustomRole desk3
 ```
 
-**Note:** When using Termfleet integration, the domain structure (e.g., `ws.aprender.cloud`) is enforced server-side. Users cannot bypass or modify the subdomain prefix configured on the Termfleet server.
+**Note:** Workstation name is mandatory. The domain structure (e.g., `desk1.ws.aprender.cloud`) is enforced server-side by Termfleet. Users cannot bypass or modify the subdomain prefix configured on the Termfleet server.
 
 This will:
 1. Create security group (opens port 443 for HTTPS)
@@ -82,8 +79,6 @@ This will:
 
 After launch completes:
 
-**For named workstations (e.g., `./launch.sh desk1`):**
-
 1. **Check Termfleet dashboard:**
    - Visit: `https://termfleet.aprender.cloud`
    - See workstation status (starting → online)
@@ -93,21 +88,9 @@ After launch completes:
    ```
    https://desk1.ws.aprender.cloud
    ```
+   (Or use the fallback AWS hostname from launch script output)
 
-**For AWS hostname workstations (e.g., `./launch.sh`):**
-
-1. **Find public hostname:**
-   ```bash
-   # From launch script output
-   # Example: ec2-3-14-159-26.us-east-1.compute.amazonaws.com
-   ```
-
-2. **Access via browser:**
-   ```
-   https://<public-hostname>
-   ```
-
-**Login credentials (both types):**
+**Login credentials:**
 - Username: `ubuntu`
 - Password: `arch@1234`
 

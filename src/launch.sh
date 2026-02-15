@@ -1,15 +1,14 @@
 #!/bin/bash
 
 # Launch EC2 instance with ttyd and Caddy setup
-# Usage: ./launch.sh [workstation_name]
-#        ./launch.sh [iam_role_name] [workstation_name]
+# Usage: ./launch.sh <workstation_name>
+#        ./launch.sh <iam_role_name> <workstation_name>
 # 
 # Defaults:
 #   - IAM Role: LabRole
 #   - Termfleet: https://termfleet.aprender.cloud
 #
 # Examples:
-#   ./launch.sh                    # Use AWS hostname
 #   ./launch.sh desk1              # Named workstation (uses LabRole default)
 #   ./launch.sh CustomRole desk2   # Explicit role and workstation name
 #
@@ -32,23 +31,34 @@ VOLUME_TYPE="gp3"
 SECURITY_GROUP_NAME="ttyd-access"
 KEY_NAME="ttyd-key"
 
-# Parse arguments: support both old and new usage patterns
-# New: ./launch.sh [workstation_name]  (uses LabRole default)
-# Old: ./launch.sh <iam_role> [workstation_name]  (explicit role)
+# Workstation name is now MANDATORY
 if [ -z "$1" ]; then
-    # No arguments - use defaults
-    ROLE_NAME="LabRole"
-    WORKSTATION_NAME=""
-elif [ -z "$2" ]; then
+    echo "ERROR: Workstation name is required"
+    echo "Usage: $0 <workstation_name>"
+    echo "       $0 <iam_role_name> <workstation_name>"
+    echo ""
+    echo "Examples:"
+    echo "  $0 desk1              # Uses LabRole default"
+    echo "  $0 CustomRole desk2   # Explicit role"
+    exit 1
+fi
+
+# Parse arguments: support both usage patterns
+# Pattern 1: ./launch.sh <workstation_name>  (uses LabRole default)
+# Pattern 2: ./launch.sh <iam_role> <workstation_name>  (explicit role)
+if [ -z "$2" ]; then
     # One argument - could be role or workstation name
     # If it looks like a valid workstation name (lowercase, hyphens), treat as workstation
-    # Otherwise treat as IAM role
+    # Otherwise treat as IAM role (and require second argument)
     if echo "$1" | grep -qE '^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$'; then
         ROLE_NAME="LabRole"
         WORKSTATION_NAME="$1"
     else
-        ROLE_NAME="$1"
-        WORKSTATION_NAME=""
+        echo "ERROR: Workstation name is required"
+        echo "Usage: $0 $1 <workstation_name>"
+        echo ""
+        echo "Example: $0 $1 desk1"
+        exit 1
     fi
 else
     # Two arguments - explicit role and workstation name
@@ -61,23 +71,20 @@ TERMFLEET_ENDPOINT="${TERMFLEET_ENDPOINT:-https://termfleet.aprender.cloud}"
 # Display configuration
 echo "IAM Role: ${ROLE_NAME}"
 
-# Validate workstation name if provided
-if [ -n "${WORKSTATION_NAME}" ]; then
-    # Must be alphanumeric with hyphens, 3-63 characters
-    if ! echo "${WORKSTATION_NAME}" | grep -qE '^[a-zA-Z0-9][a-zA-Z0-9-]{1,61}[a-zA-Z0-9]$'; then
-        echo "ERROR: Invalid workstation name '${WORKSTATION_NAME}'"
-        echo "Name must:"
-        echo "  - Be 3-63 characters long"
-        echo "  - Start and end with alphanumeric character"
-        echo "  - Contain only alphanumeric characters and hyphens"
-        exit 1
-    fi
-    echo "Workstation name: ${WORKSTATION_NAME}"
-    echo "Termfleet endpoint: ${TERMFLEET_ENDPOINT}"
-    echo "Domain will be assigned by Termfleet server (e.g., ${WORKSTATION_NAME}.ws.aprender.cloud)"
-else
-    echo "Workstation name: Will use AWS hostname (no Termfleet integration)"
+# Validate workstation name (now always required)
+# Must be alphanumeric with hyphens, 3-63 characters
+if ! echo "${WORKSTATION_NAME}" | grep -qE '^[a-zA-Z0-9][a-zA-Z0-9-]{1,61}[a-zA-Z0-9]$'; then
+    echo "ERROR: Invalid workstation name '${WORKSTATION_NAME}'"
+    echo "Name must:"
+    echo "  - Be 3-63 characters long"
+    echo "  - Start and end with alphanumeric character"
+    echo "  - Contain only alphanumeric characters and hyphens"
+    exit 1
 fi
+
+echo "Workstation name: ${WORKSTATION_NAME}"
+echo "Termfleet endpoint: ${TERMFLEET_ENDPOINT}"
+echo "Domain will be assigned by Termfleet server (e.g., ${WORKSTATION_NAME}.ws.aprender.cloud)"
 
 echo "Will attach IAM role to EC2 instance: ${ROLE_NAME}"
     
@@ -200,34 +207,33 @@ if [ "${KEY_EXISTS}" = "None" ] || [ -z "${KEY_EXISTS}" ]; then
         > "${KEY_FILE}"
     chmod 400 "${KEY_FILE}"
     echo "Key pair created and saved to ${KEY_FILE}"
+    KEY_FILE_AVAILABLE=true
 else
     echo "Using existing key pair: ${KEY_NAME}"
     if [ ! -f "${KEY_FILE}" ]; then
         echo "WARNING: Key pair exists in AWS but ${KEY_FILE} not found locally."
-        echo "You may need to use an existing key file to SSH."
+        echo "You will NOT be able to SSH to this instance."
+        echo "SSH wait will be skipped."
+        KEY_FILE_AVAILABLE=false
+    else
+        KEY_FILE_AVAILABLE=true
     fi
 fi
 
-# Prepare userdata with workstation name and Termfleet endpoint if provided
-if [ -n "${WORKSTATION_NAME}" ]; then
-    echo "Preparing userdata with workstation name: ${WORKSTATION_NAME}"
-    USERDATA_FILE="${SCRIPT_DIR}/.userdata.tmp"
-    # Add environment variables at the beginning of userdata
-    {
-        echo "#!/bin/bash"
-        echo "export WORKSTATION_NAME='${WORKSTATION_NAME}'"
-        if [ -n "${TERMFLEET_ENDPOINT}" ]; then
-            echo "export TERMFLEET_ENDPOINT='${TERMFLEET_ENDPOINT}'"
-        fi
-        echo ""
-        tail -n +2 "${SCRIPT_DIR}/userdata.sh"  # Skip shebang from original
-    } > "${USERDATA_FILE}"
-    USERDATA_ARG="file://${USERDATA_FILE}"
-    TAG_NAME="${WORKSTATION_NAME}"
-else
-    USERDATA_ARG="file://${SCRIPT_DIR}/userdata.sh"
-    TAG_NAME="workstation"
-fi
+# Prepare userdata with workstation name and Termfleet endpoint
+# Workstation name is now mandatory, so always include it
+echo "Preparing userdata with workstation name: ${WORKSTATION_NAME}"
+USERDATA_FILE="${SCRIPT_DIR}/.userdata.tmp"
+# Add environment variables at the beginning of userdata
+{
+    echo "#!/bin/bash"
+    echo "export WORKSTATION_NAME='${WORKSTATION_NAME}'"
+    echo "export TERMFLEET_ENDPOINT='${TERMFLEET_ENDPOINT}'"
+    echo ""
+    tail -n +2 "${SCRIPT_DIR}/userdata.sh"  # Skip shebang from original
+} > "${USERDATA_FILE}"
+USERDATA_ARG="file://${USERDATA_FILE}"
+TAG_NAME="${WORKSTATION_NAME}"
 
 # =================================================================
 # Check for existing instance with the same name
@@ -403,10 +409,15 @@ PUBLIC_DNS=$(echo ${INSTANCE_INFO} | jq -r '.PublicDnsName')
 PUBLIC_IP=$(echo ${INSTANCE_INFO} | jq -r '.PublicIpAddress')
 IAM_ROLE=$(echo ${INSTANCE_INFO} | jq -r '.IamInstanceProfile.Arn // "None"')
 
-echo "Waiting for SSH to be available..."
-aws ec2 wait instance-status-ok \
-    --region ${REGION} \
-    --instance-ids ${INSTANCE_ID} 2>/dev/null || echo "Note: Instance may still be initializing"
+# Only wait for SSH if we have a valid key file
+if [ "${KEY_FILE_AVAILABLE}" = true ]; then
+    echo "Waiting for SSH to be available..."
+    aws ec2 wait instance-status-ok \
+        --region ${REGION} \
+        --instance-ids ${INSTANCE_ID} 2>/dev/null || echo "Note: Instance may still be initializing"
+else
+    echo "Skipping SSH availability check (no key file available)"
+fi
 
 echo ""
 echo "======================================"
@@ -438,10 +449,11 @@ else
 fi
 echo ""
 echo "SSH Access:"
-if [ -f "${KEY_FILE}" ]; then
+if [ "${KEY_FILE_AVAILABLE}" = true ]; then
     echo "  ssh -i ${KEY_FILE} ubuntu@${PUBLIC_DNS}"
 else
-    echo "  ssh -i <path-to-${KEY_NAME}.pem> ubuntu@${PUBLIC_DNS}"
+    echo "  NOT AVAILABLE - Key file ${KEY_FILE} not found"
+    echo "  You need the ${KEY_NAME}.pem file to SSH"
 fi
 echo ""
 if [ "${REUSING_INSTANCE}" = true ]; then
@@ -449,20 +461,18 @@ if [ "${REUSING_INSTANCE}" = true ]; then
 else
     echo "Web Terminal (after setup completes, ~5-10 minutes):"
 fi
-if [ -n "${WORKSTATION_NAME}" ]; then
-    echo "  https://${WORKSTATION_NAME}.ws.aprender.cloud  (Termfleet-assigned domain)"
-    echo "  (fallback: https://${PUBLIC_DNS})"
-else
-    echo "  https://${PUBLIC_DNS}"
-fi
+echo "  https://${WORKSTATION_NAME}.ws.aprender.cloud  (Termfleet-assigned domain)"
+echo "  (fallback: https://${PUBLIC_DNS})"
 echo ""
 echo "Ubuntu password: arch@1234"
 echo ""
-echo "Note: Wait a few minutes for user-data script to complete."
-echo "      You can check progress with:"
-if [ -f "${KEY_FILE}" ]; then
+if [ "${KEY_FILE_AVAILABLE}" = true ]; then
+    echo "Note: Wait a few minutes for user-data script to complete."
+    echo "      You can check progress with:"
     echo "      ssh -i ${KEY_FILE} ubuntu@${PUBLIC_DNS} 'tail -f /var/log/cloud-init-output.log'"
 else
-    echo "      ssh -i <path-to-${KEY_NAME}.pem> ubuntu@${PUBLIC_DNS} 'tail -f /var/log/cloud-init-output.log'"
+    echo "Note: Wait ~5-10 minutes for user-data script to complete."
+    echo "      Access via web terminal (password: arch@1234) to check progress:"
+    echo "      tail -f /var/log/cloud-init-output.log"
 fi
 echo "======================================"
