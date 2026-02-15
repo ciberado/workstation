@@ -86,6 +86,27 @@ echo "Workstation name: ${WORKSTATION_NAME}"
 echo "Termfleet endpoint: ${TERMFLEET_ENDPOINT}"
 echo "Domain will be assigned by Termfleet server (e.g., ${WORKSTATION_NAME}.ws.aprender.cloud)"
 
+# Check that Termfleet service is active before proceeding
+echo "Checking Termfleet service availability..."
+HEALTH_URL="${TERMFLEET_ENDPOINT}/health"
+HEALTH_RESPONSE=$(curl -sf "${HEALTH_URL}" 2>/dev/null || echo "")
+
+if [ -z "${HEALTH_RESPONSE}" ]; then
+    echo "ERROR: Termfleet service is not reachable at ${TERMFLEET_ENDPOINT}"
+    echo "Please ensure the Termfleet service is running and accessible."
+    exit 1
+fi
+
+HEALTH_STATUS=$(echo "${HEALTH_RESPONSE}" | jq -r '.status' 2>/dev/null || echo "")
+if [ "${HEALTH_STATUS}" != "ok" ]; then
+    echo "ERROR: Termfleet service health check failed"
+    echo "Response: ${HEALTH_RESPONSE}"
+    exit 1
+fi
+
+echo "✓ Termfleet service is active and healthy"
+echo ""
+
 echo "Will attach IAM role to EC2 instance: ${ROLE_NAME}"
     
     # Check if role exists and has EC2 trust policy
