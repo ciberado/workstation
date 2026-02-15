@@ -189,7 +189,11 @@ else
 fi
 
 # Check if key pair exists, create if not
-KEY_FILE="${PWD}/${KEY_NAME}.pem"
+# Ensure ~/.ssh directory exists
+mkdir -p "${HOME}/.ssh"
+chmod 700 "${HOME}/.ssh"
+
+KEY_FILE="${HOME}/.ssh/${KEY_NAME}.pem"
 KEY_EXISTS=$(aws ec2 describe-key-pairs \
     --region ${REGION} \
     --key-names ${KEY_NAME} \
