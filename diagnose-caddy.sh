@@ -30,7 +30,7 @@ echo ""
 echo "3. DNS resolution check:"
 echo "----------------------------"
 # Extract domain from Caddyfile
-DOMAIN=$(grep -E '^[a-zA-Z0-9]' /etc/caddy/Caddyfile | grep -v '{' | head -1 | tr -d ' ')
+DOMAIN=$(grep -E '^https?://' /etc/caddy/Caddyfile | head -1 | sed 's|https\?://||' | sed 's/ {//' | tr -d ' ')
 echo "Domain in Caddyfile: ${DOMAIN}"
 if [ -n "$DOMAIN" ] && [ "$DOMAIN" != ":80" ] && [ "$DOMAIN" != ":443" ]; then
     RESOLVED_IP=$(dig +short "$DOMAIN" | head -1)

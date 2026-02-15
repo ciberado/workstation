@@ -61,7 +61,7 @@ echo "Creating new Caddyfile with domain: ${CADDY_DOMAIN}"
 # Backup existing Caddyfile
 cp /etc/caddy/Caddyfile /etc/caddy/Caddyfile.backup.$(date +%s)
 
-# Create new Caddyfile with proper domain
+# Create new Caddyfile with proper domain - MUST include https:// prefix
 cat << EOF > /etc/caddy/Caddyfile
 https://${CADDY_DOMAIN} {
 	reverse_proxy localhost:7681 {
