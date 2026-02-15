@@ -63,7 +63,7 @@ cp /etc/caddy/Caddyfile /etc/caddy/Caddyfile.backup.$(date +%s)
 
 # Create new Caddyfile with proper domain
 cat << EOF > /etc/caddy/Caddyfile
-${CADDY_DOMAIN} {
+https://${CADDY_DOMAIN} {
 	reverse_proxy localhost:7681 {
 		header_up Host {host}
 		header_up X-Real-IP {remote}

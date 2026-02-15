@@ -253,7 +253,7 @@ log_message "=== Configuring Caddy Reverse Proxy ==="
 log_message "Target domain: ${CADDY_DOMAIN}"
 
 cat << EOF > /etc/caddy/Caddyfile
-${CADDY_DOMAIN} {
+https://${CADDY_DOMAIN} {
 	reverse_proxy localhost:7681 {
 		header_up Host {host}
 		header_up X-Real-IP {remote}
@@ -263,7 +263,7 @@ ${CADDY_DOMAIN} {
 }
 EOF
 
-log_message "Caddyfile created with domain: ${CADDY_DOMAIN}"
+log_message "Caddyfile created with HTTPS for domain: ${CADDY_DOMAIN}"
 log_message "Caddy will automatically obtain Let's Encrypt certificate"
 
 # Enable and start Caddy
