@@ -2,7 +2,16 @@
 
 # Launch EC2 instance with ttyd and Caddy setup
 # Usage: ./launch.sh <iam_role_name> [workstation_name]
-# Example: ./launch.sh LabRole desk1
+# 
+# Basic usage (single workstation with AWS hostname):
+#   ./launch.sh LabRole
+#
+# Named workstation with custom domain (Termfleet integration):
+#   TERMFLEET_ENDPOINT=https://termfleet.example.com \
+#   BASE_DOMAIN=example.com \
+#   ./launch.sh LabRole desk1
+#
+# Note: When using named workstations, TERMFLEET_ENDPOINT and BASE_DOMAIN are required
 
 set -e
 
@@ -30,6 +39,8 @@ fi
 
 ROLE_NAME="$1"
 WORKSTATION_NAME="${2:-}"
+BASE_DOMAIN="${BASE_DOMAIN:-}"
+TERMFLEET_ENDPOINT="${TERMFLEET_ENDPOINT:-}"
 
 # Validate workstation name if provided
 if [ -n "${WORKSTATION_NAME}" ]; then
@@ -45,6 +56,28 @@ if [ -n "${WORKSTATION_NAME}" ]; then
     echo "Workstation name: ${WORKSTATION_NAME}"
 else
     echo "Workstation name: Will use AWS hostname"
+fi
+
+# Validate BASE_DOMAIN if workstation name is provided
+if [ -n "${WORKSTATION_NAME}" ] && [ -z "${BASE_DOMAIN}" ]; then
+    echo "ERROR: BASE_DOMAIN environment variable must be set when using custom workstation name"
+    echo "Example: BASE_DOMAIN=example.com ./launch.sh LabRole desk1"
+    exit 1
+fi
+
+if [ -n "${BASE_DOMAIN}" ]; then
+    echo "Base domain: ${BASE_DOMAIN}"
+fi
+
+# Validate TERMFLEET_ENDPOINT if workstation name is provided
+if [ -n "${WORKSTATION_NAME}" ] && [ -z "${TERMFLEET_ENDPOINT}" ]; then
+    echo "ERROR: TERMFLEET_ENDPOINT environment variable must be set when using custom workstation name"
+    echo "Example: TERMFLEET_ENDPOINT=https://termfleet.example.com BASE_DOMAIN=example.com ./launch.sh LabRole desk1"
+    exit 1
+fi
+
+if [ -n "${TERMFLEET_ENDPOINT}" ]; then
+    echo "Termfleet endpoint: ${TERMFLEET_ENDPOINT}"
 fi
 
 echo "Will attach IAM role to EC2 instance: ${ROLE_NAME}"
@@ -176,14 +209,20 @@ else
     fi
 fi
 
-# Prepare userdata with workstation name if provided
+# Prepare userdata with workstation name and base domain if provided
 if [ -n "${WORKSTATION_NAME}" ]; then
     echo "Preparing userdata with workstation name: ${WORKSTATION_NAME}"
     USERDATA_FILE="${SCRIPT_DIR}/.userdata.tmp"
-    # Add environment variable at the beginning of userdata
+    # Add environment variables at the beginning of userdata
     {
         echo "#!/bin/bash"
         echo "export WORKSTATION_NAME='${WORKSTATION_NAME}'"
+        if [ -n "${BASE_DOMAIN}" ]; then
+            echo "export BASE_DOMAIN='${BASE_DOMAIN}'"
+        fi
+        if [ -n "${TERMFLEET_ENDPOINT}" ]; then
+            echo "export TERMFLEET_ENDPOINT='${TERMFLEET_ENDPOINT}'"
+        fi
         echo ""
         tail -n +2 "${SCRIPT_DIR}/userdata.sh"  # Skip shebang from original
     } > "${USERDATA_FILE}"
@@ -194,38 +233,122 @@ else
     TAG_NAME="workstation"
 fi
 
-# Launch instance
-echo "Launching instance..."
-INSTANCE_ID=$(aws ec2 run-instances \
+# =================================================================
+# Check for existing instance with the same name
+# If found: start it if stopped, or display info if running
+# If not found: launch a new instance
+# =================================================================
+
+echo "Checking for existing instance with name: ${TAG_NAME}"
+EXISTING_INSTANCE=$(aws ec2 describe-instances \
     --region ${REGION} \
-    --image-id ${AMI_ID} \
-    --instance-type ${INSTANCE_TYPE} \
-    --key-name ${KEY_NAME} \
-    --security-group-ids ${SG_ID} \
-    ${INSTANCE_PROFILE_ARG} \
-    --metadata-options "HttpTokens=optional,HttpPutResponseHopLimit=1,HttpEndpoint=enabled" \
-    --block-device-mappings "[{\"DeviceName\":\"/dev/sda1\",\"Ebs\":{\"VolumeSize\":${VOLUME_SIZE},\"VolumeType\":\"${VOLUME_TYPE}\",\"DeleteOnTermination\":true}}]" \
-    --user-data "${USERDATA_ARG}" \
-    --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=${TAG_NAME}}]" \
-    --query 'Instances[0].InstanceId' \
-    --output text)
+    --filters "Name=tag:Name,Values=${TAG_NAME}" "Name=instance-state-name,Values=pending,running,stopping,stopped" \
+    --query 'Reservations[0].Instances[0]' \
+    --output json 2>/dev/null || echo "{}")
+
+if [ "${EXISTING_INSTANCE}" != "{}" ] && [ "$(echo ${EXISTING_INSTANCE} | jq -r '.InstanceId')" != "null" ]; then
+    INSTANCE_ID=$(echo ${EXISTING_INSTANCE} | jq -r '.InstanceId')
+    INSTANCE_STATE=$(echo ${EXISTING_INSTANCE} | jq -r '.State.Name')
+    
+    echo "Found existing instance: ${INSTANCE_ID} (state: ${INSTANCE_STATE})"
+    
+    case "${INSTANCE_STATE}" in
+        running)
+            echo "Instance is already running!"
+            ;;
+        pending)
+            echo "Instance is starting..."
+            aws ec2 wait instance-running \
+                --region ${REGION} \
+                --instance-ids ${INSTANCE_ID}
+            echo "Instance is now running!"
+            ;;
+        stopped)
+            echo "Instance is stopped. Starting it now..."
+            aws ec2 start-instances \
+                --region ${REGION} \
+                --instance-ids ${INSTANCE_ID} \
+                --output text > /dev/null
+            
+            echo "Waiting for instance to start..."
+            aws ec2 wait instance-running \
+                --region ${REGION} \
+                --instance-ids ${INSTANCE_ID}
+            echo "Instance started successfully!"
+            ;;
+        stopping)
+            echo "Instance is currently stopping. Waiting for it to stop completely..."
+            aws ec2 wait instance-stopped \
+                --region ${REGION} \
+                --instance-ids ${INSTANCE_ID}
+            echo "Instance stopped. Now starting it..."
+            aws ec2 start-instances \
+                --region ${REGION} \
+                --instance-ids ${INSTANCE_ID} \
+                --output text > /dev/null
+            
+            echo "Waiting for instance to start..."
+            aws ec2 wait instance-running \
+                --region ${REGION} \
+                --instance-ids ${INSTANCE_ID}
+            echo "Instance started successfully!"
+            ;;
+        *)
+            echo "Unexpected instance state: ${INSTANCE_STATE}"
+            exit 1
+            ;;
+    esac
+    
+    # Skip to displaying info (jump to after instance launch section)
+    REUSING_INSTANCE=true
+else
+    echo "No existing instance found. Launching new instance..."
+    REUSING_INSTANCE=false
+fi
+
+# Launch new instance (only if not reusing existing one)
+if [ "${REUSING_INSTANCE}" = false ]; then
+    echo "Launching instance..."
+    INSTANCE_ID=$(aws ec2 run-instances \
+        --region ${REGION} \
+        --image-id ${AMI_ID} \
+        --instance-type ${INSTANCE_TYPE} \
+        --key-name ${KEY_NAME} \
+        --security-group-ids ${SG_ID} \
+        ${INSTANCE_PROFILE_ARG} \
+        --metadata-options "HttpTokens=optional,HttpPutResponseHopLimit=1,HttpEndpoint=enabled" \
+        --block-device-mappings "[{\"DeviceName\":\"/dev/sda1\",\"Ebs\":{\"VolumeSize\":${VOLUME_SIZE},\"VolumeType\":\"${VOLUME_TYPE}\",\"DeleteOnTermination\":true}}]" \
+        --user-data "${USERDATA_ARG}" \
+        --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=${TAG_NAME}}]" \
+        --query 'Instances[0].InstanceId' \
+        --output text)
+    
+    echo "Instance launched: ${INSTANCE_ID}"
+    echo "Waiting for instance to start..."
+    
+    # Wait for instance to be running
+    aws ec2 wait instance-running \
+        --region ${REGION} \
+        --instance-ids ${INSTANCE_ID}
+fi
 
 # Clean up temporary userdata file if created
 [ -f "${SCRIPT_DIR}/.userdata.tmp" ] && rm -f "${SCRIPT_DIR}/.userdata.tmp"
 
-echo "Instance launched: ${INSTANCE_ID}"
-echo "Waiting for instance to start..."
-
-# Wait for instance to be running
-aws ec2 wait instance-running \
-    --region ${REGION} \
-    --instance-ids ${INSTANCE_ID}
+# Determine EIP tag name (per-workstation or shared)
+if [ -n "${WORKSTATION_NAME}" ]; then
+    EIP_TAG_NAME="workstation-eip-${WORKSTATION_NAME}"
+    echo "Using per-workstation Elastic IP for: ${WORKSTATION_NAME}"
+else
+    EIP_TAG_NAME="workstation-eip"
+    echo "Using shared Elastic IP (no workstation name specified)"
+fi
 
 # Check for existing Elastic IP with tag
-echo "Checking for existing Elastic IP..."
+echo "Checking for existing Elastic IP tagged as: ${EIP_TAG_NAME}"
 EIP_ALLOCATION=$(aws ec2 describe-addresses \
     --region ${REGION} \
-    --filters "Name=tag:Name,Values=workstation-eip" \
+    --filters "Name=tag:Name,Values=${EIP_TAG_NAME}" \
     --query 'Addresses[0].AllocationId' \
     --output text 2>/dev/null || echo "None")
 
@@ -234,23 +357,44 @@ if [ "${EIP_ALLOCATION}" = "None" ] || [ -z "${EIP_ALLOCATION}" ]; then
     EIP_ALLOCATION=$(aws ec2 allocate-address \
         --region ${REGION} \
         --domain vpc \
-        --tag-specifications "ResourceType=elastic-ip,Tags=[{Key=Name,Value=workstation-eip}]" \
+        --tag-specifications "ResourceType=elastic-ip,Tags=[{Key=Name,Value=${EIP_TAG_NAME}}]" \
         --query 'AllocationId' \
         --output text)
     echo "Elastic IP allocated: ${EIP_ALLOCATION}"
+    NEED_ASSOCIATION=true
 else
     echo "Using existing Elastic IP: ${EIP_ALLOCATION}"
+    
+    # Check if EIP is already associated with this instance
+    CURRENT_ASSOCIATION=$(aws ec2 describe-addresses \
+        --region ${REGION} \
+        --allocation-ids ${EIP_ALLOCATION} \
+        --query 'Addresses[0].InstanceId' \
+        --output text 2>/dev/null || echo "None")
+    
+    if [ "${CURRENT_ASSOCIATION}" = "${INSTANCE_ID}" ]; then
+        echo "Elastic IP is already associated with this instance"
+        NEED_ASSOCIATION=false
+    else
+        if [ "${CURRENT_ASSOCIATION}" != "None" ] && [ -n "${CURRENT_ASSOCIATION}" ]; then
+            echo "Elastic IP is currently associated with different instance: ${CURRENT_ASSOCIATION}"
+            echo "Will reassociate to current instance"
+        fi
+        NEED_ASSOCIATION=true
+    fi
 fi
 
-# Associate Elastic IP with instance
-echo "Associating Elastic IP with instance..."
-ASSOCIATION_ID=$(aws ec2 associate-address \
-    --region ${REGION} \
-    --instance-id ${INSTANCE_ID} \
-    --allocation-id ${EIP_ALLOCATION} \
-    --query 'AssociationId' \
-    --output text)
-echo "Elastic IP associated: ${ASSOCIATION_ID}"
+# Associate Elastic IP with instance (if needed)
+if [ "${NEED_ASSOCIATION}" = true ]; then
+    echo "Associating Elastic IP with instance..."
+    ASSOCIATION_ID=$(aws ec2 associate-address \
+        --region ${REGION} \
+        --instance-id ${INSTANCE_ID} \
+        --allocation-id ${EIP_ALLOCATION} \
+        --query 'AssociationId' \
+        --output text)
+    echo "Elastic IP associated: ${ASSOCIATION_ID}"
+fi
 
 # Get instance details with Elastic IP
 INSTANCE_INFO=$(aws ec2 describe-instances \
@@ -270,7 +414,11 @@ aws ec2 wait instance-status-ok \
 
 echo ""
 echo "======================================"
-echo "Instance launched successfully!"
+if [ "${REUSING_INSTANCE}" = true ]; then
+    echo "Instance ready!"
+else
+    echo "Instance launched successfully!"
+fi
 echo "======================================"
 echo "Instance ID: ${INSTANCE_ID}"
 echo "Public DNS: ${PUBLIC_DNS}"
@@ -281,7 +429,17 @@ else
     echo "IAM Role: Not attached"
 fi
 echo ""
-echo "Note: Elastic IP is tagged as 'workstation-eip' and will be reused on next launch."
+if [ -n "${WORKSTATION_NAME}" ]; then
+    echo "Elastic IP tagged as '${EIP_TAG_NAME}' (dedicated to this workstation)"
+    if [ "${REUSING_INSTANCE}" = true ]; then
+        echo "Instance and IP are persistent - safe to stop/start"
+    else
+        echo "This IP will be reused when you restart '${WORKSTATION_NAME}'"
+    fi
+else
+    echo "Elastic IP tagged as 'workstation-eip' (shared)"
+    echo "Warning: Launching another instance will move this IP"
+fi
 echo ""
 echo "SSH Access:"
 if [ -f "${KEY_FILE}" ]; then
@@ -290,8 +448,17 @@ else
     echo "  ssh -i <path-to-${KEY_NAME}.pem> ubuntu@${PUBLIC_DNS}"
 fi
 echo ""
-echo "Web Terminal (after setup completes, ~5-10 minutes):"
-echo "  https://${PUBLIC_DNS}"
+if [ "${REUSING_INSTANCE}" = true ]; then
+    echo "Web Terminal (should be available immediately):"
+else
+    echo "Web Terminal (after setup completes, ~5-10 minutes):"
+fi
+if [ -n "${WORKSTATION_NAME}" ] && [ -n "${BASE_DOMAIN}" ]; then
+    echo "  https://${WORKSTATION_NAME}.${BASE_DOMAIN}"
+    echo "  (fallback: https://${PUBLIC_DNS})"
+else
+    echo "  https://${PUBLIC_DNS}"
+fi
 echo ""
 echo "Ubuntu password: arch@1234"
 echo ""
