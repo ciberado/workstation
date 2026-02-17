@@ -96,6 +96,8 @@ Type=simple
 Restart=always
 User=root
 Group=root
+TimeoutStopSec=10
+KillMode=mixed
 
 [Install]
 WantedBy=multi-user.target
