@@ -437,6 +437,8 @@ echo "View logs: journalctl -u termfleet-registration.service -f"
 log_message "Running Caddy DNS setup..."
 /usr/local/bin/setup-caddy-dns.sh || log_message "WARNING: Caddy DNS setup failed, will retry on reboot"
 
+service ttyd restart
+
 log_message "======================================"
 log_message "Workstation setup complete!"
 log_message "======================================"
