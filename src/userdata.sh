@@ -81,7 +81,7 @@ export LANG=en_US.UTF-8
 export LC_ALL=en_US.UTF-8
 
 # Configure ttyd
-wget -O /usr/local/bin/ttyd https://github.com/tsl0922/ttyd/releases/download/1.4.2/ttyd_linux.i386
+wget -O /usr/local/bin/ttyd https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.x86_64
 chmod +x /usr/local/bin/ttyd
 
 cat << EOF > /etc/systemd/system/ttyd.service
@@ -91,11 +91,13 @@ After=syslog.target
 After=network.target
 
 [Service]
-ExecStart=/usr/local/bin/ttyd -p 7681 -i 127.0.0.1 -W su - ubuntu
+ExecStart=/usr/local/bin/ttyd -p 7681 -i 127.0.0.1 --writable bash -c 'exec su - ubuntu'
 Type=simple
 Restart=always
 User=root
 Group=root
+StandardOutput=journal
+StandardError=journal
 TimeoutStopSec=10
 KillMode=mixed
 
