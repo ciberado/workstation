@@ -81,7 +81,7 @@ export LANG=en_US.UTF-8
 export LC_ALL=en_US.UTF-8
 
 # Configure ttyd
-wget -O /usr/local/bin/ttyd https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.x86_64
+wget -O /usr/local/bin/ttyd https://github.com/tsl0922/ttyd/releases/download/1.7.3/ttyd.x86_64
 chmod +x /usr/local/bin/ttyd
 
 cat << EOF > /etc/systemd/system/ttyd.service
