@@ -91,7 +91,7 @@ After=syslog.target
 After=network.target
 
 [Service]
-ExecStart=/usr/local/bin/ttyd -p 7681 -i 127.0.0.1 --writable /bin/su - ubuntu
+ExecStart=/usr/local/bin/ttyd -p 7681 -i 127.0.0.1 -t rendererType=dom /bin/su - ubuntu
 Type=simple
 Restart=always
 User=root
