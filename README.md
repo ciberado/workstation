@@ -124,6 +124,37 @@ When Termfleet is enabled, you can instead:
 - Without `--seats`: the terminal automatically signs in as `ubuntu` (password: `workshop@1234`).
 - With `--seats N`: the terminal displays a login prompt. Sign in as `student1` through `studentN`; every student password is `workshop@1234`. The default `ubuntu` account is locked in this mode.
 
+### Central File Management
+
+Use `src/manage-files.sh` from the instructor machine to distribute material,
+collect evidence, or remove a lab directory. It connects with the EC2 SSH key
+as `ubuntu` and uses `sudo` to manage only `student1` through `studentN`.
+
+```bash
+cd src
+
+# Copy the exact local .aws directory into every student home.
+./manage-files.sh push --host workshop-a.example.com \
+  --key ~/.ssh/ttyd-key.pem --source ./credentials/.aws --path .aws
+
+# Collect every student's submission into evidence/<host>/studentN/.
+./manage-files.sh pull --host workshop-a.example.com \
+  --key ~/.ssh/ttyd-key.pem --path lab-01/submission --destination ./evidence
+
+# Preview, then remove a lab directory from every student home.
+./manage-files.sh remove --host workshop-a.example.com \
+  --key ~/.ssh/ttyd-key.pem --path lab-01 --dry-run
+./manage-files.sh remove --host workshop-a.example.com \
+  --key ~/.ssh/ttyd-key.pem --path lab-01 --yes
+```
+
+Pass each target with a separate `--host` option to manage several
+workstations. The tool reads each host's `/etc/workstation-seats` marker to
+discover its seat count. Use `--seats N` only to override detection for older
+workstations. Use an exact path such as `.aws`, not a wildcard. Credentials are
+copied verbatim: keep source credential directories outside this repository,
+use least-privileged temporary credentials, and remove them after the lab.
+
 ### Destroy Workstation
 
 To permanently destroy a workstation and free all associated resources:

@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- `manage-files.sh` for centralized SSH/rsync distribution, evidence collection,
+  and confirmed removal of files across student seat directories.
+- Automatic seat discovery through the `/etc/workstation-seats` marker.
+
+---
+
 ## 2.3.1 - 2026-09-08
 
 ### Changed

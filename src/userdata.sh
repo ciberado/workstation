@@ -21,7 +21,7 @@ apt update
 apt install docker-ce docker-ce-cli containerd.io -y
 
 # Install tmux and configure users.
-apt install wget tmux -y
+apt install wget tmux rsync -y
 if [ -n "${SEAT_COUNT:-}" ]; then
     # Seed each student home from /etc/skel.
     wget -O /etc/skel/.tmux.conf https://raw.githubusercontent.com/gpakosz/.tmux/master/.tmux.conf
@@ -40,6 +40,8 @@ EOF
         usermod -aG docker "${seat_username}"
     done
 
+    printf 'SEAT_COUNT=%s\n' "${SEAT_COUNT}" > /etc/workstation-seats
+    chmod 644 /etc/workstation-seats
     log_message "Created ${SEAT_COUNT} student seats with shared /etc/skel configuration"
 else
     usermod -aG docker ubuntu
