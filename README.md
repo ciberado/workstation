@@ -34,35 +34,41 @@ This project provides automated setup scripts for launching EC2 workstations wit
 
 ```bash
 cd src
-./launch.sh <workstation_name>
+./launch.sh --workstation-name <workstation_name> [--rolename <iam_role>] [--termfleet <endpoint>]
 ```
 
+Run `./launch.sh --help` (or `-h`) to display the available options.
+
 **Parameters:**
-- `workstation_name` - Custom name for workstation (**required**)
+- `--workstation-name` - Custom workstation name (required unless `WORKSTATION_NAME` is set)
   - Must be 3-63 characters
   - Alphanumeric and hyphens only (lowercase recommended)
   - Must start and end with alphanumeric character
   - Example: `desk1`, `workstation-01`, `training-vm`
+- `--rolename` - EC2 IAM role; defaults to `LabRole`
+- `--termfleet` - Optional Termfleet endpoint
 
 **Defaults:**
 - IAM Role: `LabRole`
 - Termfleet: disabled
 
 **Environment Variables:**
-- `TERMFLEET_ENDPOINT` - Enable Termfleet with this server URL
-  - Example: `export TERMFLEET_ENDPOINT=https://custom-termfleet.com`
+- `WORKSTATION_NAME` - Default workstation name
+- `ROLE_NAME` - Default EC2 IAM role
+- `TERMFLEET_ENDPOINT` - Default Termfleet endpoint
+
+CLI values override these environment variables.
 
 **Examples:**
 ```bash
 # Named workstation with defaults (LabRole; no Termfleet)
-./launch.sh desk1
+./launch.sh --workstation-name desk1
 
-# Named workstation with custom Termfleet server
-export TERMFLEET_ENDPOINT=https://custom-termfleet.com
-./launch.sh desk2
+# Named workstation with a custom Termfleet server
+./launch.sh --workstation-name desk2 --termfleet https://custom-termfleet.com
 
 # Explicit IAM role and workstation name
-./launch.sh CustomRole desk3
+./launch.sh --workstation-name desk3 --rolename CustomRole
 ```
 
 **Note:** Workstation name is mandatory. Without Termfleet, access the web terminal through the AWS public hostname printed by `launch.sh`.
@@ -161,7 +167,7 @@ To enable Termfleet, set its endpoint before launching:
 ```bash
 # Option 1: Environment variable
 export TERMFLEET_ENDPOINT=https://your-termfleet-server.com
-./launch.sh termfleet-desk
+./launch.sh --workstation-name termfleet-desk
 
 # Option 2: set TERMFLEET_ENDPOINT in your deployment environment.
 ```
@@ -233,13 +239,13 @@ workstation/
 
 **Option 1: Specify during launch (recommended)**
 ```bash
-./launch.sh LabRole my-desk-01
+./launch.sh --workstation-name my-desk-01
 ```
 
 **Option 2: Set environment variable**
 ```bash
 export WORKSTATION_NAME="my-desk-01"
-./launch.sh LabRole
+./launch.sh
 ```
 
 The workstation name:

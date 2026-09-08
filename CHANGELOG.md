@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+- Replaced positional launch arguments with `--workstation-name`, `--rolename`, and
+  `--termfleet` options.
+- Launch options take precedence over `WORKSTATION_NAME`, `ROLE_NAME`, and
+  `TERMFLEET_ENDPOINT` environment variables.
+
+---
+
 ## 2.2.1 - 2026-02-08
 
 ### Changed

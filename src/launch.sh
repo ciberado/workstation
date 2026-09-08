@@ -1,16 +1,16 @@
 #!/bin/bash
 
 # Launch EC2 instance with ttyd and Caddy setup
-# Usage: ./launch.sh <workstation_name>
-#        ./launch.sh <iam_role_name> <workstation_name>
+# Usage: ./launch.sh --workstation-name <workstation_name> [options]
 # 
 # Defaults:
 #   - IAM Role: LabRole
 #   - Termfleet: disabled (set TERMFLEET_ENDPOINT to enable)
 #
 # Examples:
-#   ./launch.sh desk1              # Named workstation (uses LabRole default)
-#   ./launch.sh CustomRole desk2   # Explicit role and workstation name
+#   ./launch.sh --workstation-name desk1
+#   ./launch.sh --workstation-name desk2 --rolename CustomRole
+#   ./launch.sh --workstation-name desk3 --termfleet https://termfleet.example.com
 #
 # Termfleet is optional. When enabled, its server assigns the workstation domain.
 
@@ -30,42 +30,69 @@ VOLUME_TYPE="gp3"
 SECURITY_GROUP_NAME="ttyd-access"
 KEY_NAME="ttyd-key"
 
-# Workstation name is now MANDATORY
-if [ -z "$1" ]; then
-    echo "ERROR: Workstation name is required"
-    echo "Usage: $0 <workstation_name>"
-    echo "       $0 <iam_role_name> <workstation_name>"
-    echo ""
-    echo "Examples:"
-    echo "  $0 desk1              # Uses LabRole default"
-    echo "  $0 CustomRole desk2   # Explicit role"
+# Environment variables are defaults. Explicit CLI options take precedence.
+WORKSTATION_NAME="${WORKSTATION_NAME:-}"
+ROLE_NAME="${ROLE_NAME:-LabRole}"
+TERMFLEET_ENDPOINT="${TERMFLEET_ENDPOINT:-}"
+
+usage() {
+    cat <<EOF
+Usage: $0 --workstation-name <workstation_name> [options]
+
+Options:
+  --workstation-name <name>  Workstation name (overrides WORKSTATION_NAME)
+  --rolename <role>       EC2 IAM role (overrides ROLE_NAME; default: LabRole)
+  --termfleet <endpoint>  Enable Termfleet (overrides TERMFLEET_ENDPOINT)
+  -h, --help              Show this help message
+EOF
+}
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --workstation-name)
+            if [ "$#" -lt 2 ] || [ -z "$2" ]; then
+                echo "ERROR: --workstation-name requires a workstation name"
+                usage
+                exit 1
+            fi
+            WORKSTATION_NAME="$2"
+            shift 2
+            ;;
+        --rolename)
+            if [ "$#" -lt 2 ] || [ -z "$2" ]; then
+                echo "ERROR: --rolename requires an IAM role name"
+                usage
+                exit 1
+            fi
+            ROLE_NAME="$2"
+            shift 2
+            ;;
+        --termfleet)
+            if [ "$#" -lt 2 ]; then
+                echo "ERROR: --termfleet requires an endpoint"
+                usage
+                exit 1
+            fi
+            TERMFLEET_ENDPOINT="$2"
+            shift 2
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            echo "ERROR: Unknown option: $1"
+            usage
+            exit 1
+            ;;
+    esac
+done
+
+if [ -z "${WORKSTATION_NAME}" ]; then
+    echo "ERROR: --workstation-name is required (or set WORKSTATION_NAME)"
+    usage
     exit 1
 fi
-
-# Parse arguments: support both usage patterns
-# Pattern 1: ./launch.sh <workstation_name>  (uses LabRole default)
-# Pattern 2: ./launch.sh <iam_role> <workstation_name>  (explicit role)
-if [ -z "$2" ]; then
-    # One argument - could be role or workstation name
-    # If it looks like a valid workstation name (alphanumeric with hyphens, 3-63 chars), treat as workstation
-    # Otherwise treat as IAM role (and require second argument)
-    if echo "$1" | grep -qE '^[a-zA-Z0-9][a-zA-Z0-9-]{1,61}[a-zA-Z0-9]$'; then
-        ROLE_NAME="LabRole"
-        WORKSTATION_NAME="$1"
-    else
-        echo "ERROR: Workstation name is required"
-        echo "Usage: $0 $1 <workstation_name>"
-        echo ""
-        echo "Example: $0 $1 desk1"
-        exit 1
-    fi
-else
-    # Two arguments - explicit role and workstation name
-    ROLE_NAME="$1"
-    WORKSTATION_NAME="$2"
-fi
-
-TERMFLEET_ENDPOINT="${TERMFLEET_ENDPOINT:-}"
 
 # Display configuration
 echo "IAM Role: ${ROLE_NAME}"
