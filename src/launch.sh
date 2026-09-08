@@ -34,7 +34,13 @@ KEY_NAME="ttyd-key"
 
 # Environment variables are defaults. Explicit CLI options take precedence.
 WORKSTATION_NAME="${WORKSTATION_NAME:-}"
-ROLE_NAME="${ROLE_NAME:-LabRole}"
+ROLE_NAME="${ROLE_NAME:-}"
+ROLE_REQUESTED=false
+if [ -n "${ROLE_NAME}" ]; then
+    ROLE_REQUESTED=true
+else
+    ROLE_NAME="LabRole"
+fi
 TERMFLEET_ENDPOINT="${TERMFLEET_ENDPOINT:-}"
 
 usage() {
@@ -43,7 +49,7 @@ Usage: $0 --workstation-name <workstation_name> [options]
 
 Options:
   --workstation-name <name>  Workstation name (overrides WORKSTATION_NAME)
-  --rolename <role>       EC2 IAM role (overrides ROLE_NAME; default: LabRole)
+  --rolename <role>       EC2 IAM role (overrides ROLE_NAME; default: LabRole if available)
   --termfleet <endpoint>  Enable Termfleet (overrides TERMFLEET_ENDPOINT)
   --size <size>           Instance size: small, medium, large, or xlarge
   --region <region>       AWS Region (overrides AWS_DEFAULT_REGION; default: us-east-1)
@@ -71,6 +77,7 @@ while [ "$#" -gt 0 ]; do
                 exit 1
             fi
             ROLE_NAME="$2"
+            ROLE_REQUESTED=true
             shift 2
             ;;
         --termfleet)
@@ -149,7 +156,11 @@ if [ -n "${SEAT_COUNT}" ] && ! [[ "${SEAT_COUNT}" =~ ^[1-9][0-9]*$ ]]; then
 fi
 
 # Display configuration
-echo "IAM Role: ${ROLE_NAME}"
+if [ "${ROLE_REQUESTED}" = true ]; then
+    echo "IAM Role: ${ROLE_NAME}"
+else
+    echo "IAM Role: ${ROLE_NAME} if available"
+fi
 echo "Instance type: ${INSTANCE_TYPE}"
 echo "AWS Region: ${REGION}"
 if [ -n "${SEAT_COUNT}" ]; then
@@ -198,7 +209,7 @@ else
 fi
 echo ""
 
-echo "Will attach IAM role to EC2 instance: ${ROLE_NAME}"
+echo "Checking IAM role: ${ROLE_NAME}"
 
 # Check if role exists and has EC2 trust policy
 ROLE_INFO=$(aws iam get-role \
@@ -207,47 +218,52 @@ ROLE_INFO=$(aws iam get-role \
     --output json 2>/dev/null || echo "{}")
 
 if [ "$ROLE_INFO" = "{}" ]; then
-    echo "ERROR: Role ${ROLE_NAME} does not exist."
-    exit 1
-fi
+    if [ "${ROLE_REQUESTED}" = true ]; then
+        echo "ERROR: Requested role ${ROLE_NAME} does not exist."
+        exit 1
+    fi
 
-echo "Role ${ROLE_NAME} exists. Checking trust policy..."
-
-# Check trust policy allows EC2
-TRUST_POLICY=$(echo ${ROLE_INFO} | jq -r '.AssumeRolePolicyDocument')
-if ! echo ${TRUST_POLICY} | grep -q "ec2.amazonaws.com"; then
-    echo "WARNING: Role ${ROLE_NAME} may not have EC2 in its trust policy."
-    echo "The instance may not be able to assume this role."
-fi
-
-# Check if instance profile exists
-PROFILE_EXISTS=$(aws iam get-instance-profile \
-    --instance-profile-name ${ROLE_NAME} \
-    --query 'InstanceProfile.InstanceProfileName' \
-    --output text 2>/dev/null || echo "None")
-
-if [ "${PROFILE_EXISTS}" = "None" ] || [ -z "${PROFILE_EXISTS}" ]; then
-    echo "Instance profile '${ROLE_NAME}' not found. Creating it..."
-    
-    # Create instance profile
-    aws iam create-instance-profile \
-        --instance-profile-name ${ROLE_NAME} 2>/dev/null || echo "Profile may already exist"
-    
-    # Attach role to instance profile
-    aws iam add-role-to-instance-profile \
-        --instance-profile-name ${ROLE_NAME} \
-        --role-name ${ROLE_NAME} 2>/dev/null || echo "Role may already be attached"
-    
-    echo "Instance profile created and role attached."
-    
-    # Wait a bit for the profile to be available
-    echo "Waiting for instance profile to propagate..."
-    sleep 10
+    echo "LabRole is unavailable; launching without an IAM role."
+    INSTANCE_PROFILE_ARG=""
 else
-    echo "Using existing instance profile: ${ROLE_NAME}"
-fi
+    echo "Role ${ROLE_NAME} exists. Checking trust policy..."
 
-INSTANCE_PROFILE_ARG="--iam-instance-profile Name=${ROLE_NAME}"
+    # Check trust policy allows EC2
+    TRUST_POLICY=$(echo ${ROLE_INFO} | jq -r '.AssumeRolePolicyDocument')
+    if ! echo ${TRUST_POLICY} | grep -q "ec2.amazonaws.com"; then
+        echo "WARNING: Role ${ROLE_NAME} may not have EC2 in its trust policy."
+        echo "The instance may not be able to assume this role."
+    fi
+
+    # Check if instance profile exists
+    PROFILE_EXISTS=$(aws iam get-instance-profile \
+        --instance-profile-name ${ROLE_NAME} \
+        --query 'InstanceProfile.InstanceProfileName' \
+        --output text 2>/dev/null || echo "None")
+
+    if [ "${PROFILE_EXISTS}" = "None" ] || [ -z "${PROFILE_EXISTS}" ]; then
+        echo "Instance profile '${ROLE_NAME}' not found. Creating it..."
+
+        # Create instance profile
+        aws iam create-instance-profile \
+            --instance-profile-name ${ROLE_NAME} 2>/dev/null || echo "Profile may already exist"
+
+        # Attach role to instance profile
+        aws iam add-role-to-instance-profile \
+            --instance-profile-name ${ROLE_NAME} \
+            --role-name ${ROLE_NAME} 2>/dev/null || echo "Role may already be attached"
+
+        echo "Instance profile created and role attached."
+
+        # Wait a bit for the profile to be available
+        echo "Waiting for instance profile to propagate..."
+        sleep 10
+    else
+        echo "Using existing instance profile: ${ROLE_NAME}"
+    fi
+
+    INSTANCE_PROFILE_ARG="--iam-instance-profile Name=${ROLE_NAME}"
+fi
 
 echo "Finding latest Ubuntu 24.04 LTS AMI..."
 AMI_ID=$(aws ec2 describe-images \

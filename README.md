@@ -27,7 +27,7 @@ This project provides automated setup scripts for launching EC2 workstations wit
 
 - AWS account with EC2 permissions
 - AWS CLI configured
-- IAM role for EC2 instances (defaults to `LabRole`)
+- EC2 IAM role if the workstation needs AWS permissions; `LabRole` is used when available
 - A Termfleet server only if you want managed DNS, monitoring, and dashboard integration
 
 ### Launch Workstation
@@ -45,7 +45,7 @@ Run `./launch.sh --help` (or `-h`) to display the available options.
   - Alphanumeric and hyphens only (lowercase recommended)
   - Must start and end with alphanumeric character
   - Example: `desk1`, `workstation-01`, `training-vm`
-- `--rolename` - EC2 IAM role; defaults to `LabRole`
+- `--rolename` - Optional EC2 IAM role; `LabRole` is used when available, otherwise no role is attached
 - `--termfleet` - Optional Termfleet endpoint
 - `--size` - Optional instance size: `small`, `medium`, `large`, or `xlarge`
 - `--region` - Optional AWS Region; defaults to `us-east-1`
@@ -54,7 +54,7 @@ Run `./launch.sh --help` (or `-h`) to display the available options.
 - `--dry` - Validate options without making Termfleet or AWS requests
 
 **Defaults:**
-- IAM Role: `LabRole`
+- IAM Role: `LabRole` when available; otherwise none
 - Instance type: `t3.medium`
 - AWS Region: `us-east-1`
 - Termfleet: disabled

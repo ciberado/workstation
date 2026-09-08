@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.3.1 - 2026-09-08
+
+### Changed
+- Launch without an instance role when implicit `LabRole` is unavailable; an
+  explicitly requested missing role still fails.
+
+---
+
 ## 2.3.0 - 2026-09-08
 
 ### Changed
