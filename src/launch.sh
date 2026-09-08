@@ -186,6 +186,11 @@ if [ "${DRY_RUN}" = true ]; then
     exit 0
 fi
 
+if ! command -v jq >/dev/null 2>&1; then
+    echo "ERROR: jq is required to launch a workstation. Install jq and try again."
+    exit 1
+fi
+
 if [ -n "${TERMFLEET_ENDPOINT}" ]; then
     echo "Termfleet: enabled (${TERMFLEET_ENDPOINT})"
     echo "Checking Termfleet service availability..."

@@ -91,9 +91,12 @@ mv kubectl /usr/local/bin/
 chmod +x /usr/local/bin/kubectl
 apt install -y jq
 
-# Seat mode locks ubuntu; only student accounts can use the login prompt.
+# Seat mode reserves ubuntu for SSH-key administration. Give it an unknown random
+# password so students cannot use it at the terminal login prompt.
 if [ -n "${SEAT_COUNT:-}" ]; then
-    passwd --lock ubuntu
+    ADMIN_PASSWORD=$(head -c 32 /dev/urandom | base64)
+    echo "ubuntu:${ADMIN_PASSWORD}" | chpasswd
+    unset ADMIN_PASSWORD
 else
     echo "ubuntu:workshop@1234" | chpasswd
 fi

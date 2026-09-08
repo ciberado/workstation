@@ -1,11 +1,19 @@
 # Changelog
 
-## Unreleased
+## 2.4.0 - 2026-09-08
 
 ### Added
 - `manage-files.sh` for centralized SSH/rsync distribution, evidence collection,
   and confirmed removal of files across student seat directories.
 - Automatic seat discovery through the `/etc/workstation-seats` marker.
+- Offline, AWS-preflight, and opt-in temporary EC2 lifecycle test scripts.
+- Automatic AWS Systems Manager fallback for centralized file management when
+  direct SSH is unavailable.
+- SSM-native lifecycle tests for multi-seat and automatic-login workstations.
+
+### Fixed
+- Retained key-based `ubuntu` administrator access in seat mode for centralized
+  file management while preventing student password sign-in to that account.
 
 ---
 

@@ -1,6 +1,20 @@
 # Workstation Integration with Termfleet
 
-This document explains how to integrate the Termfleet registration service with existing workstation instances.
+This document explains Termfleet registration for existing workstation
+instances. New workstations enable it only when launched with
+`--termfleet <endpoint>` (or `TERMFLEET_ENDPOINT`). Without that setting,
+Termfleet is disabled and the workstation uses its AWS public hostname.
+
+For a new workstation, use:
+
+```bash
+cd src
+./launch.sh --workstation-name desk1 --termfleet https://your-termfleet-server.com
+```
+
+`userdata.sh` writes the endpoint configuration and installs the registration
+service. The manual steps below are for an existing instance that was not
+launched with that option.
 
 ## Overview
 

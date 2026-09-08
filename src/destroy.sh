@@ -47,6 +47,11 @@ fi
 WORKSTATION_NAME="$1"
 TERMFLEET_ENDPOINT="${TERMFLEET_ENDPOINT:-}"
 
+if ! command -v jq >/dev/null 2>&1; then
+    echo "ERROR: jq is required to destroy a workstation. Install jq and try again."
+    exit 1
+fi
+
 # Validate workstation name
 if ! echo "${WORKSTATION_NAME}" | grep -qE '^[a-zA-Z0-9][a-zA-Z0-9-]{1,61}[a-zA-Z0-9]$'; then
     echo "ERROR: Invalid workstation name '${WORKSTATION_NAME}'"

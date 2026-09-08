@@ -3,7 +3,7 @@
 ## Project Structure & Module Organization
 
 This repository provisions an AWS EC2 workstation with a browser terminal and
-Termfleet registration. Operational scripts live in `src/`:
+optional Termfleet registration. Operational scripts live in `src/`:
 
 - `src/launch.sh` creates or starts the EC2 workstation, networking resources,
   and passes cloud-init data.
@@ -11,14 +11,16 @@ Termfleet registration. Operational scripts live in `src/`:
   instance.
 - `src/userdata.sh` is the Ubuntu cloud-init payload; it installs and configures
   Docker, ttyd, Caddy, tmux, and registration services.
+- `src/manage-files.sh` distributes, collects, and removes student files over
+  direct SSH or Session Manager.
+- `tests/` contains offline CLI, AWS preflight, and opt-in EC2 lifecycle tests.
 - `docs/TERMFLEET_INTEGRATION.md` documents the Termfleet protocol. Keep
   user-facing setup and behavior changes reflected in `README.md` and
   `CHANGELOG.md`.
 
 ## Build, Test, and Development Commands
 
-There is no compiled build or automated test suite. Validate shell changes
-before review:
+There is no compiled build. Validate shell changes before review:
 
 ```bash
 bash -n src/launch.sh src/destroy.sh src/userdata.sh  # syntax check
@@ -51,6 +53,13 @@ read-only AWS queries where practical. For `userdata.sh` changes, verify the
 generated service configuration and cloud-init logs on a disposable instance;
 check `systemctl status ttyd` and `/var/log/workstation-setup.log`.
 
+Run `tests/test_cli.sh` for offline regression coverage and
+`tests/test_aws_preflight.sh` for read-only AWS checks. The temporary lifecycle
+test is opt-in: `RUN_E2E=1 E2E_MODE=multi tests/test_e2e.sh` or
+`RUN_E2E=1 E2E_MODE=autologin tests/test_e2e.sh`. It uses Session Manager,
+creates billable EC2/EIP resources, and cleans up the tagged workstation on
+exit.
+
 ## Commit & Pull Request Guidelines
 
 History favors concise imperative subjects, such as `Fix ttyd rendering issue:`
@@ -68,5 +77,6 @@ the default Termfleet endpoint as security-sensitive; document their effect and
 test them in a non-production account first.
 
 Keep configuration consistent across scripts and documentation. For CLI
-changes, update environment precedence, validation, help, examples, and
-dependent provisioning or teardown behavior.
+changes, update environment precedence, validation, help, examples, tests, and
+dependent provisioning or teardown behavior. Keep direct SSH and Session
+Manager transports functionally equivalent for file-management operations.

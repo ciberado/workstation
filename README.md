@@ -27,6 +27,7 @@ This project provides automated setup scripts for launching EC2 workstations wit
 
 - AWS account with EC2 permissions
 - AWS CLI configured
+- `jq` installed locally
 - EC2 IAM role if the workstation needs AWS permissions; `LabRole` is used when available
 - A Termfleet server only if you want managed DNS, monitoring, and dashboard integration
 
@@ -122,13 +123,17 @@ When Termfleet is enabled, you can instead:
 
 **Login credentials:**
 - Without `--seats`: the terminal automatically signs in as `ubuntu` (password: `workshop@1234`).
-- With `--seats N`: the terminal displays a login prompt. Sign in as `student1` through `studentN`; every student password is `workshop@1234`. The default `ubuntu` account is locked in this mode.
+- With `--seats N`: the terminal displays a login prompt. Sign in as `student1` through `studentN`; every student password is `workshop@1234`. The `ubuntu` password is randomized on boot and that account is reserved for key-based instructor administration.
 
 ### Central File Management
 
 Use `src/manage-files.sh` from the instructor machine to distribute material,
 collect evidence, or remove a lab directory. It connects with the EC2 SSH key
 as `ubuntu` and uses `sudo` to manage only `student1` through `studentN`.
+It tries direct SSH first and automatically falls back to AWS Systems Manager
+when corporate network policy blocks TCP/22. The fallback needs the AWS CLI,
+Session Manager plugin, permission to start SSM sessions, and the instance ID
+or a public IP/DNS name that resolves to it.
 
 ```bash
 cd src
@@ -147,6 +152,9 @@ cd src
 ./manage-files.sh remove --host workshop-a.example.com \
   --key ~/.ssh/ttyd-key.pem --path lab-01 --yes
 ```
+
+Use `--transport ssm --region us-east-1` to require the HTTPS-based SSM path,
+or `--transport ssh` to disable fallback. `auto` is the default.
 
 Pass each target with a separate `--host` option to manage several
 workstations. The tool reads each host's `/etc/workstation-seats` marker to
@@ -179,6 +187,27 @@ This will:
 4. Remove all associated data
 
 **Note:** You will be prompted to confirm before destruction proceeds. This action is irreversible.
+
+## Testing
+
+Run the offline CLI checks after shell changes:
+
+```bash
+tests/test_cli.sh
+```
+
+`tests/test_aws_preflight.sh` performs read-only AWS checks. The opt-in lifecycle
+test provisions a temporary `t3.small`, accesses it through Session Manager,
+and releases its instance and Elastic IP on exit. It requires `aws`, `jq`,
+`session-manager-plugin`, and SSM access to the test instance:
+
+```bash
+RUN_E2E=1 E2E_MODE=multi E2E_SEATS=2 tests/test_e2e.sh
+RUN_E2E=1 E2E_MODE=autologin tests/test_e2e.sh
+```
+
+The multi-seat mode verifies SSM-based file push, pull, and removal. Both modes
+are billable while running.
 
 ## Termfleet Integration
 
@@ -252,11 +281,11 @@ sudo TERMFLEET_ENDPOINT=https://your-server.com \
 ```
 workstation/
 ├── src/
-│   ├── launch.sh                          # Main launch script
-│   ├── userdata.sh                        # EC2 user data (installs everything)
-│   ├── register-termfleet.sh              # Termfleet registration script
-│   ├── termfleet-registration.service     # Systemd service file
-│   └── termfleet.conf.example             # Configuration template
+│   ├── launch.sh                          # Provision or start a workstation
+│   ├── destroy.sh                         # Release its EC2 and Elastic IP resources
+│   ├── manage-files.sh                    # Student file distribution and collection
+│   └── userdata.sh                        # EC2 cloud-init payload
+├── tests/                                 # Offline, preflight, and opt-in E2E tests
 ├── docs/
 │   └── TERMFLEET_INTEGRATION.md           # Integration documentation
 ├── README.md                              # This file
