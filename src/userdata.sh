@@ -19,22 +19,42 @@ curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/
 echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
 apt update
 apt install docker-ce docker-ce-cli containerd.io -y
-usermod -aG docker ubuntu
 
-# Install tmux
+# Install tmux and configure users.
 apt install wget tmux -y
-wget -O /home/ubuntu/.tmux.conf https://raw.githubusercontent.com/gpakosz/.tmux/master/.tmux.conf
-wget -O /home/ubuntu/.tmux.conf.local https://raw.githubusercontent.com/gpakosz/.tmux/master/.tmux.conf.local
-chown ubuntu:ubuntu /home/ubuntu/.tmux.conf /home/ubuntu/.tmux.conf.local
-
-# Attach to tmux if not already in a tmux session
-# When tmux exits, restart bash to re-trigger tmux (keeps tmux always running)
-cat << EOF >> /home/ubuntu/.bashrc
-if [[ -z \$TMUX ]]; then
+if [ -n "${SEAT_COUNT:-}" ]; then
+    # Seed each student home from /etc/skel.
+    wget -O /etc/skel/.tmux.conf https://raw.githubusercontent.com/gpakosz/.tmux/master/.tmux.conf
+    wget -O /etc/skel/.tmux.conf.local https://raw.githubusercontent.com/gpakosz/.tmux/master/.tmux.conf.local
+    cat << 'EOF' >> /etc/skel/.bashrc
+if [[ -z $TMUX ]]; then
   tmux attach -t default || tmux new -s default
   exec bash
 fi
 EOF
+
+    for seat_number in $(seq 1 "${SEAT_COUNT}"); do
+        seat_username="student${seat_number}"
+        useradd --create-home --shell /bin/bash "${seat_username}"
+        echo "${seat_username}:workshop@1234" | chpasswd
+        usermod -aG docker "${seat_username}"
+    done
+
+    log_message "Created ${SEAT_COUNT} student seats with shared /etc/skel configuration"
+else
+    usermod -aG docker ubuntu
+    wget -O /home/ubuntu/.tmux.conf https://raw.githubusercontent.com/gpakosz/.tmux/master/.tmux.conf
+    wget -O /home/ubuntu/.tmux.conf.local https://raw.githubusercontent.com/gpakosz/.tmux/master/.tmux.conf.local
+    chown ubuntu:ubuntu /home/ubuntu/.tmux.conf /home/ubuntu/.tmux.conf.local
+
+    # Keep tmux running for the automatic ubuntu session.
+    cat << 'EOF' >> /home/ubuntu/.bashrc
+if [[ -z $TMUX ]]; then
+  tmux attach -t default || tmux new -s default
+  exec bash
+fi
+EOF
+fi
 
 # Install AWS CLI v2
 apt install unzip -y
@@ -69,8 +89,12 @@ mv kubectl /usr/local/bin/
 chmod +x /usr/local/bin/kubectl
 apt install -y jq
 
-# Configure ubuntu password
-echo "ubuntu:arch@1234" | chpasswd
+# Seat mode locks ubuntu; only student accounts can use the login prompt.
+if [ -n "${SEAT_COUNT:-}" ]; then
+    passwd --lock ubuntu
+else
+    echo "ubuntu:workshop@1234" | chpasswd
+fi
 
 # Configure locale for UTF-8 support
 log_message "Configuring UTF-8 locale..."
@@ -80,9 +104,15 @@ update-locale LANG=en_US.UTF-8
 export LANG=en_US.UTF-8
 export LC_ALL=en_US.UTF-8
 
-# Configure ttyd
+# Seat mode starts login; otherwise retain automatic ubuntu login.
 wget -O /usr/local/bin/ttyd https://github.com/tsl0922/ttyd/releases/download/1.7.3/ttyd.x86_64
 chmod +x /usr/local/bin/ttyd
+
+if [ -n "${SEAT_COUNT:-}" ]; then
+    TTYD_SESSION_COMMAND="/bin/login"
+else
+    TTYD_SESSION_COMMAND="/bin/su - ubuntu"
+fi
 
 cat << EOF > /etc/systemd/system/ttyd.service
 [Unit]
@@ -91,7 +121,7 @@ After=syslog.target
 After=network.target
 
 [Service]
-ExecStart=/usr/local/bin/ttyd -p 7681 -i 127.0.0.1 -t rendererType=dom /bin/su - ubuntu
+ExecStart=/usr/local/bin/ttyd -p 7681 -i 127.0.0.1 -t rendererType=dom ${TTYD_SESSION_COMMAND}
 Type=simple
 Restart=always
 User=root

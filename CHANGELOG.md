@@ -1,18 +1,21 @@
 # Changelog
 
-## Unreleased
+## 2.3.0 - 2026-09-08
 
 ### Changed
 - Replaced positional launch arguments with `--workstation-name`, `--rolename`, and
   `--termfleet` options.
 - Launch options take precedence over `WORKSTATION_NAME`, `ROLE_NAME`, and
   `TERMFLEET_ENDPOINT` environment variables.
+- Standardized the default Ubuntu and student password as `workshop@1234`.
 
 ### Added
 - `--size` option for selecting `t3.small`, `t3.medium`, `t3.large`, or
   `t3.xlarge` instances.
 - `--dry` option for validating launch configuration without external requests.
 - `--region` option for selecting the AWS Region, defaulting to `us-east-1`.
+- `--seats` option for creating numbered student accounts, using `/etc/skel` for
+  shared shell and tmux configuration, and switching ttyd to a login prompt.
 
 ---
 

@@ -25,6 +25,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Configuration
 REGION="${AWS_DEFAULT_REGION:-us-east-1}"
 INSTANCE_SIZE="${INSTANCE_SIZE:-medium}"
+SEAT_COUNT="${SEAT_COUNT:-}"
 DRY_RUN=false
 VOLUME_SIZE=8
 VOLUME_TYPE="gp3"
@@ -46,6 +47,7 @@ Options:
   --termfleet <endpoint>  Enable Termfleet (overrides TERMFLEET_ENDPOINT)
   --size <size>           Instance size: small, medium, large, or xlarge
   --region <region>       AWS Region (overrides AWS_DEFAULT_REGION; default: us-east-1)
+  --seats <number>        Create student1 through student<number> and require login
   --dry                   Validate options without making Termfleet or AWS requests
   -h, --help              Show this help message
 EOF
@@ -98,6 +100,15 @@ while [ "$#" -gt 0 ]; do
             REGION="$2"
             shift 2
             ;;
+        --seats)
+            if [ "$#" -lt 2 ] || [ -z "$2" ]; then
+                echo "ERROR: --seats requires a positive whole number"
+                usage
+                exit 1
+            fi
+            SEAT_COUNT="$2"
+            shift 2
+            ;;
         --dry)
             DRY_RUN=true
             shift
@@ -131,10 +142,21 @@ case "${INSTANCE_SIZE}" in
         ;;
 esac
 
+if [ -n "${SEAT_COUNT}" ] && ! [[ "${SEAT_COUNT}" =~ ^[1-9][0-9]*$ ]]; then
+    echo "ERROR: Invalid seat count '${SEAT_COUNT}'"
+    echo "Seat count must be a positive whole number"
+    exit 1
+fi
+
 # Display configuration
 echo "IAM Role: ${ROLE_NAME}"
 echo "Instance type: ${INSTANCE_TYPE}"
 echo "AWS Region: ${REGION}"
+if [ -n "${SEAT_COUNT}" ]; then
+    echo "Seats: ${SEAT_COUNT} (login required)"
+else
+    echo "Seats: disabled (automatic ubuntu login)"
+fi
 
 # Validate workstation name (now always required)
 # Must be alphanumeric with hyphens, 3-63 characters
@@ -314,7 +336,7 @@ else
     fi
 fi
 
-# Prepare userdata with workstation name and optional Termfleet endpoint.
+# Prepare userdata with workstation name, optional Termfleet endpoint, and seats.
 echo "Preparing userdata with workstation name: ${WORKSTATION_NAME}"
 USERDATA_FILE="${SCRIPT_DIR}/.userdata.tmp"
 # Add environment variables at the beginning of userdata
@@ -322,9 +344,17 @@ USERDATA_FILE="${SCRIPT_DIR}/.userdata.tmp"
     echo "#!/bin/bash"
     echo "export WORKSTATION_NAME='${WORKSTATION_NAME}'"
     echo "export TERMFLEET_ENDPOINT='${TERMFLEET_ENDPOINT}'"
+    echo "export SEAT_COUNT='${SEAT_COUNT}'"
     echo ""
     tail -n +2 "${SCRIPT_DIR}/userdata.sh"  # Skip shebang from original
 } > "${USERDATA_FILE}"
+
+USERDATA_SIZE=$(wc -c < "${USERDATA_FILE}")
+if [ "${USERDATA_SIZE}" -gt 16384 ]; then
+    echo "ERROR: Generated user data is ${USERDATA_SIZE} bytes; EC2 permits at most 16384 bytes."
+    rm -f "${USERDATA_FILE}"
+    exit 1
+fi
 USERDATA_ARG="file://${USERDATA_FILE}"
 TAG_NAME="${WORKSTATION_NAME}"
 
@@ -386,6 +416,12 @@ if [ "${EXISTING_INSTANCE}" != "{}" ] && [ "$(echo ${EXISTING_INSTANCE} | jq -r 
     INSTANCE_STATE=$(echo ${EXISTING_INSTANCE} | jq -r '.State.Name')
     
     echo "Found existing instance: ${INSTANCE_ID} (state: ${INSTANCE_STATE})"
+
+    if [ -n "${SEAT_COUNT}" ]; then
+        echo "ERROR: --seats only applies when creating a new workstation."
+        echo "Choose a new --workstation-name or configure the existing instance manually."
+        exit 1
+    fi
     
     case "${INSTANCE_STATE}" in
         running)
@@ -574,7 +610,7 @@ else
     echo "  https://${PUBLIC_DNS}"
 fi
 echo ""
-echo "Ubuntu password: arch@1234"
+echo "Ubuntu password: workshop@1234"
 echo ""
 if [ "${KEY_FILE_AVAILABLE}" = true ]; then
     echo "Note: Wait a few minutes for user-data script to complete."
@@ -582,7 +618,7 @@ if [ "${KEY_FILE_AVAILABLE}" = true ]; then
     echo "      ssh -i ${KEY_FILE} ubuntu@${PUBLIC_DNS} 'tail -f /var/log/cloud-init-output.log'"
 else
     echo "Note: Wait ~5-10 minutes for user-data script to complete."
-    echo "      Access via web terminal (password: arch@1234) to check progress:"
+    echo "      Access via web terminal (password: workshop@1234) to check progress:"
     echo "      tail -f /var/log/cloud-init-output.log"
 fi
 echo "======================================"

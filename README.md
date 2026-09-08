@@ -34,7 +34,7 @@ This project provides automated setup scripts for launching EC2 workstations wit
 
 ```bash
 cd src
-./launch.sh --workstation-name <workstation_name> [--rolename <iam_role>] [--termfleet <endpoint>] [--size <size>] [--region <region>] [--dry]
+./launch.sh --workstation-name <workstation_name> [--rolename <iam_role>] [--termfleet <endpoint>] [--size <size>] [--region <region>] [--seats <number>] [--dry]
 ```
 
 Run `./launch.sh --help` (or `-h`) to display the available options.
@@ -49,6 +49,8 @@ Run `./launch.sh --help` (or `-h`) to display the available options.
 - `--termfleet` - Optional Termfleet endpoint
 - `--size` - Optional instance size: `small`, `medium`, `large`, or `xlarge`
 - `--region` - Optional AWS Region; defaults to `us-east-1`
+- `--seats` - Optional positive number of student accounts; enables the terminal login prompt
+  - Applies when creating a new workstation; use a new workstation name to change seats
 - `--dry` - Validate options without making Termfleet or AWS requests
 
 **Defaults:**
@@ -63,6 +65,7 @@ Run `./launch.sh --help` (or `-h`) to display the available options.
 - `TERMFLEET_ENDPOINT` - Default Termfleet endpoint
 - `INSTANCE_SIZE` - Default instance size (`medium`)
 - `AWS_DEFAULT_REGION` - Default AWS Region (`us-east-1`)
+- `SEAT_COUNT` - Default number of student accounts; unset keeps automatic Ubuntu login
 
 CLI values override these environment variables.
 
@@ -83,6 +86,9 @@ CLI values override these environment variables.
 # Workstation in a different AWS Region
 ./launch.sh --workstation-name desk5 --region eu-west-1
 
+# Classroom workstation with three login seats
+./launch.sh --workstation-name workshop-a --seats 3
+
 # Validate a launch configuration without provisioning resources
 ./launch.sh --workstation-name desk6 --size xlarge --dry
 ```
@@ -94,7 +100,7 @@ This will:
 2. Allocate or reuse dedicated Elastic IP
 3. Create security group (opens ports 22, 80, 443)
 4. Find latest Ubuntu 24.04 AMI
-5. Launch or restart t3.medium instance with 8GB storage
+5. Launch or restart the selected t3 instance type with 8GB storage
 6. Execute userdata.sh (installs ttyd, Caddy, tools)
 7. Register with Termfleet only when `TERMFLEET_ENDPOINT` is set
 
@@ -115,8 +121,8 @@ When Termfleet is enabled, you can instead:
    ```
 
 **Login credentials:**
-- Username: `ubuntu`
-- Password: `arch@1234`
+- Without `--seats`: the terminal automatically signs in as `ubuntu` (password: `workshop@1234`).
+- With `--seats N`: the terminal displays a login prompt. Sign in as `student1` through `studentN`; every student password is `workshop@1234`. The default `ubuntu` account is locked in this mode.
 
 ### Destroy Workstation
 
@@ -359,7 +365,7 @@ curl http://localhost:7681
 
 ## Security Notes
 
-- Default password is `arch@1234` - **Change in production!**
+- Default password is `workshop@1234` - **Change in production!**
 - ttyd listens only on localhost (127.0.0.1)
 - Caddy provides HTTPS automatically
 - Security group opens only port 443 (HTTPS)
