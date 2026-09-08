@@ -8,6 +8,12 @@
 - Launch options take precedence over `WORKSTATION_NAME`, `ROLE_NAME`, and
   `TERMFLEET_ENDPOINT` environment variables.
 
+### Added
+- `--size` option for selecting `t3.small`, `t3.medium`, `t3.large`, or
+  `t3.xlarge` instances.
+- `--dry` option for validating launch configuration without external requests.
+- `--region` option for selecting the AWS Region, defaulting to `us-east-1`.
+
 ---
 
 ## 2.2.1 - 2026-02-08

@@ -34,7 +34,7 @@ This project provides automated setup scripts for launching EC2 workstations wit
 
 ```bash
 cd src
-./launch.sh --workstation-name <workstation_name> [--rolename <iam_role>] [--termfleet <endpoint>]
+./launch.sh --workstation-name <workstation_name> [--rolename <iam_role>] [--termfleet <endpoint>] [--size <size>] [--region <region>] [--dry]
 ```
 
 Run `./launch.sh --help` (or `-h`) to display the available options.
@@ -47,15 +47,22 @@ Run `./launch.sh --help` (or `-h`) to display the available options.
   - Example: `desk1`, `workstation-01`, `training-vm`
 - `--rolename` - EC2 IAM role; defaults to `LabRole`
 - `--termfleet` - Optional Termfleet endpoint
+- `--size` - Optional instance size: `small`, `medium`, `large`, or `xlarge`
+- `--region` - Optional AWS Region; defaults to `us-east-1`
+- `--dry` - Validate options without making Termfleet or AWS requests
 
 **Defaults:**
 - IAM Role: `LabRole`
+- Instance type: `t3.medium`
+- AWS Region: `us-east-1`
 - Termfleet: disabled
 
 **Environment Variables:**
 - `WORKSTATION_NAME` - Default workstation name
 - `ROLE_NAME` - Default EC2 IAM role
 - `TERMFLEET_ENDPOINT` - Default Termfleet endpoint
+- `INSTANCE_SIZE` - Default instance size (`medium`)
+- `AWS_DEFAULT_REGION` - Default AWS Region (`us-east-1`)
 
 CLI values override these environment variables.
 
@@ -69,6 +76,15 @@ CLI values override these environment variables.
 
 # Explicit IAM role and workstation name
 ./launch.sh --workstation-name desk3 --rolename CustomRole
+
+# Larger workstation
+./launch.sh --workstation-name desk4 --size large  # Uses t3.large
+
+# Workstation in a different AWS Region
+./launch.sh --workstation-name desk5 --region eu-west-1
+
+# Validate a launch configuration without provisioning resources
+./launch.sh --workstation-name desk6 --size xlarge --dry
 ```
 
 **Note:** Workstation name is mandatory. Without Termfleet, access the web terminal through the AWS public hostname printed by `launch.sh`.

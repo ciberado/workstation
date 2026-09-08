@@ -66,3 +66,7 @@ Never commit credentials, private key files, account identifiers, or production
 endpoints. Treat changes to security-group rules, IAM roles, public ports, and
 the default Termfleet endpoint as security-sensitive; document their effect and
 test them in a non-production account first.
+
+Keep configuration consistent across scripts and documentation. For CLI
+changes, update environment precedence, validation, help, examples, and
+dependent provisioning or teardown behavior.

@@ -24,7 +24,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Configuration
 REGION="${AWS_DEFAULT_REGION:-us-east-1}"
-INSTANCE_TYPE="t3.medium"
+INSTANCE_SIZE="${INSTANCE_SIZE:-medium}"
+DRY_RUN=false
 VOLUME_SIZE=8
 VOLUME_TYPE="gp3"
 SECURITY_GROUP_NAME="ttyd-access"
@@ -43,6 +44,9 @@ Options:
   --workstation-name <name>  Workstation name (overrides WORKSTATION_NAME)
   --rolename <role>       EC2 IAM role (overrides ROLE_NAME; default: LabRole)
   --termfleet <endpoint>  Enable Termfleet (overrides TERMFLEET_ENDPOINT)
+  --size <size>           Instance size: small, medium, large, or xlarge
+  --region <region>       AWS Region (overrides AWS_DEFAULT_REGION; default: us-east-1)
+  --dry                   Validate options without making Termfleet or AWS requests
   -h, --help              Show this help message
 EOF
 }
@@ -76,6 +80,28 @@ while [ "$#" -gt 0 ]; do
             TERMFLEET_ENDPOINT="$2"
             shift 2
             ;;
+        --size)
+            if [ "$#" -lt 2 ] || [ -z "$2" ]; then
+                echo "ERROR: --size requires small, medium, large, or xlarge"
+                usage
+                exit 1
+            fi
+            INSTANCE_SIZE="$2"
+            shift 2
+            ;;
+        --region)
+            if [ "$#" -lt 2 ] || [ -z "$2" ]; then
+                echo "ERROR: --region requires an AWS Region"
+                usage
+                exit 1
+            fi
+            REGION="$2"
+            shift 2
+            ;;
+        --dry)
+            DRY_RUN=true
+            shift
+            ;;
         -h|--help)
             usage
             exit 0
@@ -94,8 +120,21 @@ if [ -z "${WORKSTATION_NAME}" ]; then
     exit 1
 fi
 
+case "${INSTANCE_SIZE}" in
+    small|medium|large|xlarge)
+        INSTANCE_TYPE="t3.${INSTANCE_SIZE}"
+        ;;
+    *)
+        echo "ERROR: Invalid size '${INSTANCE_SIZE}'"
+        echo "Size must be one of: small, medium, large, xlarge"
+        exit 1
+        ;;
+esac
+
 # Display configuration
 echo "IAM Role: ${ROLE_NAME}"
+echo "Instance type: ${INSTANCE_TYPE}"
+echo "AWS Region: ${REGION}"
 
 # Validate workstation name (now always required)
 # Must be alphanumeric with hyphens, 3-63 characters
@@ -109,6 +148,11 @@ if ! echo "${WORKSTATION_NAME}" | grep -qE '^[a-zA-Z0-9][a-zA-Z0-9-]{1,61}[a-zA-
 fi
 
 echo "Workstation name: ${WORKSTATION_NAME}"
+if [ "${DRY_RUN}" = true ]; then
+    echo "Dry run: configuration verified; no Termfleet or AWS requests were made."
+    exit 0
+fi
+
 if [ -n "${TERMFLEET_ENDPOINT}" ]; then
     echo "Termfleet: enabled (${TERMFLEET_ENDPOINT})"
     echo "Checking Termfleet service availability..."
