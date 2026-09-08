@@ -14,6 +14,8 @@ optional Termfleet registration. Operational scripts live in `src/`:
 - `src/manage-files.sh` distributes, collects, and removes student files over
   direct SSH or Session Manager.
 - `tests/` contains offline CLI, AWS preflight, and opt-in EC2 lifecycle tests.
+- `bin/workstation` is the installed CLI; `scripts/package-release.sh` builds
+  release assets and `.github/workflows/release.yml` publishes matching tags.
 - `docs/TERMFLEET_INTEGRATION.md` documents the Termfleet protocol. Keep
   user-facing setup and behavior changes reflected in `README.md` and
   `CHANGELOG.md`.
@@ -25,6 +27,8 @@ There is no compiled build. Validate shell changes before review:
 ```bash
 bash -n src/launch.sh src/destroy.sh src/userdata.sh  # syntax check
 shellcheck src/*.sh                                   # lint, if installed
+tests/test_cli.sh                                     # offline regression checks
+scripts/package-release.sh /tmp/workstation-release   # package validation
 ```
 
 Run infrastructure actions only against an intended AWS account and region:
@@ -80,3 +84,8 @@ Keep configuration consistent across scripts and documentation. For CLI
 changes, update environment precedence, validation, help, examples, tests, and
 dependent provisioning or teardown behavior. Keep direct SSH and Session
 Manager transports functionally equivalent for file-management operations.
+
+For releases, keep `VERSION`, the changelog version, tag (`vX.Y.Z`), archive
+name, and generated installer version identical. Release assets must include a
+SHA-256 manifest; never package credentials, private keys, `.terraform`, or
+generated `dist/` content.

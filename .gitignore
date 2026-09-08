@@ -16,3 +16,6 @@ src/.userdata.tmp
 
 # AWS key pairs
 *.pem
+
+# Release artifacts
+dist/

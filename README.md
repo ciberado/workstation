@@ -23,6 +23,33 @@ This project provides automated setup scripts for launching EC2 workstations wit
 
 ## Quick Start
 
+### Install the CLI
+
+For a released version, install the instructor-side CLI into `~/.local`:
+
+```bash
+curl -fsSL https://github.com/ciberado/workstation/releases/latest/download/workstation-installer.sh | bash
+```
+
+The installer verifies the archive SHA-256 checksum, keeps releases under
+`~/.local/share/workstation/`, and creates `~/.local/bin/workstation`. It never
+copies AWS credentials or private keys. Add `~/.local/bin` to `PATH` if needed,
+then check the local setup:
+
+```bash
+workstation doctor
+workstation launch --workstation-name lab-a --seats 10
+```
+
+To install the AWS Session Manager plugin on Ubuntu or Debian when it is
+missing, run:
+
+```bash
+curl -fsSL https://github.com/ciberado/workstation/releases/latest/download/workstation-installer.sh | bash -s -- --with-ssm-plugin
+```
+
+The plugin is required only for file-management SSM fallback.
+
 ### Prerequisites
 
 - AWS account with EC2 permissions
@@ -38,7 +65,8 @@ cd src
 ./launch.sh --workstation-name <workstation_name> [--rolename <iam_role>] [--termfleet <endpoint>] [--size <size>] [--region <region>] [--seats <number>] [--dry]
 ```
 
-Run `./launch.sh --help` (or `-h`) to display the available options.
+Run `./launch.sh --help` (or `-h`) to display the available options. When
+installed, the equivalent command is `workstation launch --help`.
 
 **Parameters:**
 - `--workstation-name` - Custom workstation name (required unless `WORKSTATION_NAME` is set)
@@ -280,12 +308,18 @@ sudo TERMFLEET_ENDPOINT=https://your-server.com \
 
 ```
 workstation/
+├── bin/
+│   └── workstation                        # Installed CLI entry point
 ├── src/
 │   ├── launch.sh                          # Provision or start a workstation
 │   ├── destroy.sh                         # Release its EC2 and Elastic IP resources
 │   ├── manage-files.sh                    # Student file distribution and collection
 │   └── userdata.sh                        # EC2 cloud-init payload
 ├── tests/                                 # Offline, preflight, and opt-in E2E tests
+├── scripts/
+│   ├── install.sh.in                      # Release installer template
+│   └── package-release.sh                 # Archive and checksum builder
+├── .github/workflows/release.yml          # Tag-triggered release publishing
 ├── docs/
 │   └── TERMFLEET_INTEGRATION.md           # Integration documentation
 ├── README.md                              # This file
@@ -438,7 +472,9 @@ curl http://localhost:7681
 
 ## Version History
 
-See [CHANGELOG.md](CHANGELOG.md) for version history and changes.
+See [CHANGELOG.md](CHANGELOG.md) for version history and changes. To publish a
+version, update `VERSION` and the changelog, push a matching `vX.Y.Z` tag, and
+let the release workflow build the archive, checksum, and installer.
 
 ## License
 

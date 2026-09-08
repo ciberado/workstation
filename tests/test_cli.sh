@@ -6,6 +6,7 @@ set -euo pipefail
 TEST_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LAUNCH_SCRIPT="${TEST_ROOT}/src/launch.sh"
 MANAGE_SCRIPT="${TEST_ROOT}/src/manage-files.sh"
+CLI_SCRIPT="${TEST_ROOT}/bin/workstation"
 
 fail() {
     echo "FAIL: $1" >&2
@@ -19,7 +20,11 @@ assert_contains() {
 }
 
 bash -n "${TEST_ROOT}/src/launch.sh" "${TEST_ROOT}/src/destroy.sh" \
-    "${TEST_ROOT}/src/userdata.sh" "${MANAGE_SCRIPT}"
+    "${TEST_ROOT}/src/userdata.sh" "${MANAGE_SCRIPT}" "${CLI_SCRIPT}" \
+    "${TEST_ROOT}/scripts/package-release.sh"
+
+assert_contains "$("${CLI_SCRIPT}" version)" "$(tr -d '[:space:]' < "${TEST_ROOT}/VERSION")"
+assert_contains "$("${CLI_SCRIPT}" help)" "workstation <command>"
 
 help_output=$("${LAUNCH_SCRIPT}" --help)
 assert_contains "${help_output}" "--workstation-name <name>"
@@ -120,5 +125,23 @@ userdata_size=$({
 if [ "${userdata_size}" -gt 16384 ]; then
     fail "generated EC2 user data exceeds 16 KB (${userdata_size} bytes)"
 fi
+
+PACKAGE_DIR=$(mktemp -d)
+INSTALL_PREFIX=""
+trap 'rm -rf "${PACKAGE_DIR}" "${INSTALL_PREFIX}"' EXIT
+"${TEST_ROOT}/scripts/package-release.sh" "${PACKAGE_DIR}"
+package_version=$(tr -d '[:space:]' < "${TEST_ROOT}/VERSION")
+test -s "${PACKAGE_DIR}/workstation-${package_version}.tar.gz"
+test -s "${PACKAGE_DIR}/workstation-${package_version}.tar.gz.sha256"
+test -x "${PACKAGE_DIR}/workstation-installer.sh"
+tar -tzf "${PACKAGE_DIR}/workstation-${package_version}.tar.gz" | \
+    grep -Fx "workstation-${package_version}/bin/workstation" >/dev/null
+assert_contains "$("${PACKAGE_DIR}/workstation-installer.sh" --help)" "workstation ${package_version}"
+
+INSTALL_PREFIX=$(mktemp -d)
+WORKSTATION_PREFIX="${INSTALL_PREFIX}" WORKSTATION_RELEASE_BASE_URL="file://${PACKAGE_DIR}" \
+    "${PACKAGE_DIR}/workstation-installer.sh"
+assert_contains "$("${INSTALL_PREFIX}/bin/workstation" version)" "${package_version}"
+assert_contains "$("${INSTALL_PREFIX}/bin/workstation" help)" "workstation <command>"
 
 echo "PASS: offline CLI and file-management tests"

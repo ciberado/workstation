@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+
+# User-facing entry point installed by scripts/install.sh.in.
+set -euo pipefail
+
+SCRIPT_PATH="${BASH_SOURCE[0]}"
+while [ -L "${SCRIPT_PATH}" ]; do
+    SCRIPT_DIR="$(cd -P "$(dirname "${SCRIPT_PATH}")" && pwd)"
+    SCRIPT_PATH="$(readlink "${SCRIPT_PATH}")"
+    [[ "${SCRIPT_PATH}" != /* ]] && SCRIPT_PATH="${SCRIPT_DIR}/${SCRIPT_PATH}"
+done
+PROJECT_ROOT="$(cd "$(dirname "${SCRIPT_PATH}")/.." && pwd)"
+
+usage() {
+    cat <<EOF
+Usage: workstation <command> [arguments]
+
+Commands:
+  launch       Provision or start a workstation
+  destroy      Release a workstation and its Elastic IP
+  files        Distribute, collect, or remove student files
+  doctor       Check local dependencies and AWS authentication
+  test         Run cli, preflight, or e2e tests
+  version      Print the installed version
+  help         Show this help
+
+Examples:
+  workstation launch --workstation-name lab-a --seats 10
+  workstation files push --host 203.0.113.10 --source ./lab-01 --path lab-01
+  workstation test cli
+EOF
+}
+
+doctor() {
+    local missing=false
+    local command_name
+
+    for command_name in aws jq ssh rsync; do
+        if command -v "${command_name}" >/dev/null 2>&1; then
+            printf 'OK      %s: %s\n' "${command_name}" "$(command -v "${command_name}")"
+        else
+            printf 'MISSING %s\n' "${command_name}" >&2
+            missing=true
+        fi
+    done
+
+    if command -v session-manager-plugin >/dev/null 2>&1; then
+        printf 'OK      session-manager-plugin: %s\n' "$(command -v session-manager-plugin)"
+    else
+        printf 'OPTIONAL session-manager-plugin (needed for SSM fallback)\n' >&2
+    fi
+
+    if command -v aws >/dev/null 2>&1; then
+        if aws sts get-caller-identity --output text >/dev/null 2>&1; then
+            echo 'OK      AWS credentials are active'
+        else
+            echo 'WARNING AWS credentials are unavailable or expired' >&2
+            missing=true
+        fi
+    fi
+
+    [ "${missing}" = false ]
+}
+
+command_name="${1:-help}"
+if [ "$#" -gt 0 ]; then
+    shift
+fi
+
+case "${command_name}" in
+    launch) exec "${PROJECT_ROOT}/src/launch.sh" "$@" ;;
+    destroy) exec "${PROJECT_ROOT}/src/destroy.sh" "$@" ;;
+    files) exec "${PROJECT_ROOT}/src/manage-files.sh" "$@" ;;
+    doctor) doctor "$@" ;;
+    test)
+        case "${1:-cli}" in
+            cli) exec "${PROJECT_ROOT}/tests/test_cli.sh" ;;
+            preflight) shift; exec "${PROJECT_ROOT}/tests/test_aws_preflight.sh" "$@" ;;
+            e2e) shift; exec "${PROJECT_ROOT}/tests/test_e2e.sh" "$@" ;;
+            *) echo "ERROR: test must be cli, preflight, or e2e" >&2; exit 1 ;;
+        esac
+        ;;
+    version) cat "${PROJECT_ROOT}/VERSION" ;;
+    help|-h|--help) usage ;;
+    *) echo "ERROR: Unknown command: ${command_name}" >&2; usage >&2; exit 1 ;;
+esac

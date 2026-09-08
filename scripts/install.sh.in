@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+
+# Generated for each release. Installs the workstation CLI without copying AWS
+# credentials or private keys.
+set -euo pipefail
+
+VERSION="@VERSION@"
+REPOSITORY="${WORKSTATION_REPOSITORY:-ciberado/workstation}"
+PREFIX="${WORKSTATION_PREFIX:-${HOME}/.local}"
+INSTALL_ROOT="${PREFIX}/share/workstation"
+BIN_DIR="${PREFIX}/bin"
+PACKAGE_NAME="workstation-${VERSION}"
+BASE_URL="${WORKSTATION_RELEASE_BASE_URL:-https://github.com/${REPOSITORY}/releases/download/v${VERSION}}"
+INSTALL_SSM_PLUGIN=false
+
+usage() {
+    cat <<EOF
+Usage: install.sh [--with-ssm-plugin]
+
+Installs workstation ${VERSION} under ${PREFIX}. Add ${BIN_DIR} to PATH if needed.
+--with-ssm-plugin installs AWS Session Manager Plugin on supported Ubuntu hosts.
+EOF
+}
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --with-ssm-plugin) INSTALL_SSM_PLUGIN=true ;;
+        -h|--help) usage; exit 0 ;;
+        *) echo "ERROR: Unknown option: $1" >&2; usage >&2; exit 1 ;;
+    esac
+    shift
+done
+
+for required_command in curl sha256sum tar; do
+    command -v "${required_command}" >/dev/null 2>&1 || {
+        echo "ERROR: Required command is not installed: ${required_command}" >&2
+        exit 1
+    }
+done
+
+temporary_dir="$(mktemp -d)"
+cleanup() {
+    rm -rf "${temporary_dir}"
+}
+trap cleanup EXIT
+
+archive_path="${temporary_dir}/${PACKAGE_NAME}.tar.gz"
+checksum_path="${archive_path}.sha256"
+curl --fail --location --silent --show-error "${BASE_URL}/${PACKAGE_NAME}.tar.gz" -o "${archive_path}"
+curl --fail --location --silent --show-error "${BASE_URL}/${PACKAGE_NAME}.tar.gz.sha256" -o "${checksum_path}"
+
+expected_checksum="$(awk '{print $1}' "${checksum_path}")"
+actual_checksum="$(sha256sum "${archive_path}" | awk '{print $1}')"
+if [ "${expected_checksum}" != "${actual_checksum}" ]; then
+    echo "ERROR: Download checksum does not match the release manifest" >&2
+    exit 1
+fi
+
+target_dir="${INSTALL_ROOT}/${VERSION}"
+if [ ! -d "${target_dir}" ]; then
+    mkdir -p "${INSTALL_ROOT}"
+    tar --extract --gzip --file "${archive_path}" --directory "${INSTALL_ROOT}"
+    mv "${INSTALL_ROOT}/${PACKAGE_NAME}" "${target_dir}"
+fi
+
+mkdir -p "${BIN_DIR}"
+if [ -e "${BIN_DIR}/workstation" ] && [ ! -L "${BIN_DIR}/workstation" ]; then
+    echo "ERROR: Refusing to replace non-symlink ${BIN_DIR}/workstation" >&2
+    exit 1
+fi
+ln -sfn "${target_dir}/bin/workstation" "${BIN_DIR}/workstation"
+
+if [ "${INSTALL_SSM_PLUGIN}" = true ] && ! command -v session-manager-plugin >/dev/null 2>&1; then
+    if [ "$(uname -s)" != Linux ] || ! command -v dpkg >/dev/null 2>&1; then
+        echo "ERROR: --with-ssm-plugin currently supports Debian and Ubuntu hosts only" >&2
+        exit 1
+    fi
+    case "$(uname -m)" in
+        x86_64) plugin_architecture=ubuntu_64bit ;;
+        aarch64|arm64) plugin_architecture=ubuntu_arm64 ;;
+        *) echo "ERROR: Unsupported architecture for Session Manager Plugin" >&2; exit 1 ;;
+    esac
+    plugin_package="${temporary_dir}/session-manager-plugin.deb"
+    curl --fail --location --silent --show-error \
+        "https://s3.amazonaws.com/session-manager-downloads/plugin/latest/${plugin_architecture}/session-manager-plugin.deb" \
+        -o "${plugin_package}"
+    sudo dpkg -i "${plugin_package}"
+fi
+
+echo "Installed workstation ${VERSION}"
+echo "Run: ${BIN_DIR}/workstation doctor"
+case ":${PATH}:" in
+    *":${BIN_DIR}:"*) ;;
+    *) echo "Add ${BIN_DIR} to PATH to run 'workstation' directly." ;;
+esac

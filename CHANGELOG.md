@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.4.0 - 2026-09-08
+## 2.5.0 - 2026-09-08
 
 ### Added
 - `manage-files.sh` for centralized SSH/rsync distribution, evidence collection,
@@ -10,6 +10,8 @@
 - Automatic AWS Systems Manager fallback for centralized file management when
   direct SSH is unavailable.
 - SSM-native lifecycle tests for multi-seat and automatic-login workstations.
+- Versioned release archives, a checksum-verifying local installer, and the
+  `workstation` command-line entry point.
 
 ### Fixed
 - Retained key-based `ubuntu` administrator access in seat mode for centralized
