@@ -1,6 +1,6 @@
 # Workstation
 
-AWS EC2-based web terminal environment with ttyd and automatic Termfleet registration.
+AWS EC2-based web terminal environment with ttyd and optional Termfleet registration.
 
 ## Overview
 
@@ -8,7 +8,7 @@ This project provides automated setup scripts for launching EC2 workstations wit
 
 - **ttyd** - Web-based terminal (runs on localhost:7681)
 - **Caddy** - Reverse proxy with automatic HTTPS
-- **Termfleet Integration** - Automatic registration with Termfleet management server
+- **Optional Termfleet Integration** - Automatic registration when configured
 - **Development Tools** - Docker, AWS CLI, Terraform, Node.js, kubectl, and more
 
 ## Features
@@ -16,10 +16,10 @@ This project provides automated setup scripts for launching EC2 workstations wit
 - 🚀 **One-command Launch** - Deploy workstation with single script execution
 - 🌐 **Web Terminal Access** - Browser-based terminal via ttyd + Caddy
 - 🔒 **Automatic HTTPS** - Caddy provides SSL with AWS hostname
-- 📡 **Auto-Registration** - Workstations register with Termfleet on boot
+- 📡 **Optional Auto-Registration** - Register workstations with Termfleet on boot
 - 🛠️ **Pre-installed Tools** - Docker, AWS CLI, Terraform, kubectl, Node.js, tmux
-- 🔄 **Health Monitoring** - Termfleet tracks workstation status in real-time
-- 📊 **Dashboard Integration** - View all workstations in Termfleet web UI
+- 🔄 **Health Monitoring** - Available when using Termfleet
+- 📊 **Dashboard Integration** - Available when using Termfleet
 
 ## Quick Start
 
@@ -28,7 +28,7 @@ This project provides automated setup scripts for launching EC2 workstations wit
 - AWS account with EC2 permissions
 - AWS CLI configured
 - IAM role for EC2 instances (defaults to `LabRole`)
-- Termfleet server deployed (defaults to `termfleet.aprender.cloud`)
+- A Termfleet server only if you want managed DNS, monitoring, and dashboard integration
 
 ### Launch Workstation
 
@@ -46,16 +46,15 @@ cd src
 
 **Defaults:**
 - IAM Role: `LabRole`
-- Termfleet: `https://termfleet.aprender.cloud`
+- Termfleet: disabled
 
 **Environment Variables:**
-- `TERMFLEET_ENDPOINT` - Override default Termfleet server URL
-  - Default: `https://termfleet.aprender.cloud`
+- `TERMFLEET_ENDPOINT` - Enable Termfleet with this server URL
   - Example: `export TERMFLEET_ENDPOINT=https://custom-termfleet.com`
 
 **Examples:**
 ```bash
-# Named workstation with defaults (LabRole + termfleet.aprender.cloud)
+# Named workstation with defaults (LabRole; no Termfleet)
 ./launch.sh desk1
 
 # Named workstation with custom Termfleet server
@@ -66,22 +65,24 @@ export TERMFLEET_ENDPOINT=https://custom-termfleet.com
 ./launch.sh CustomRole desk3
 ```
 
-**Note:** Workstation name is mandatory. The domain structure (e.g., `desk1.ws.aprender.cloud`) is enforced server-side by Termfleet. Users cannot bypass or modify the subdomain prefix configured on the Termfleet server.
+**Note:** Workstation name is mandatory. Without Termfleet, access the web terminal through the AWS public hostname printed by `launch.sh`.
 
 This will:
-1. Verify Termfleet service is available
+1. Optionally check the configured Termfleet service; continue with the AWS hostname if it is unavailable
 2. Allocate or reuse dedicated Elastic IP
 3. Create security group (opens ports 22, 80, 443)
 4. Find latest Ubuntu 24.04 AMI
 5. Launch or restart t3.medium instance with 8GB storage
 6. Execute userdata.sh (installs ttyd, Caddy, tools)
-7. Register with Termfleet management server
+7. Register with Termfleet only when `TERMFLEET_ENDPOINT` is set
 
 ### Access Workstation
 
-After launch completes:
+After launch completes, wait for setup to finish and open the AWS public hostname printed by `launch.sh`.
 
-1. **Check Termfleet dashboard:**
+When Termfleet is enabled, you can instead:
+
+1. **Check the Termfleet dashboard:**
    - Visit: `https://termfleet.aprender.cloud`
    - See workstation status (starting → online)
    - Get assigned domain (e.g., `desk1.ws.aprender.cloud`)
@@ -90,7 +91,6 @@ After launch completes:
    ```
    https://desk1.ws.aprender.cloud
    ```
-   (Or use the fallback AWS hostname from launch script output)
 
 **Login credentials:**
 - Username: `ubuntu`
@@ -114,7 +114,7 @@ cd src
 ```
 
 This will:
-1. Delete DNS registration from Termfleet
+1. Delete DNS registration from Termfleet when `TERMFLEET_ENDPOINT` is set
 2. Disassociate and release the Elastic IP
 3. Terminate the EC2 instance
 4. Remove all associated data
@@ -156,15 +156,14 @@ Termfleet is a centralized management system for workstations. It provides:
 
 ### Configuration
 
-Set Termfleet endpoint before launching:
+To enable Termfleet, set its endpoint before launching:
 
 ```bash
 # Option 1: Environment variable
 export TERMFLEET_ENDPOINT=https://your-termfleet-server.com
-./launch.sh LabRole
+./launch.sh termfleet-desk
 
-# Option 2: Edit userdata.sh
-# Change line: TERMFLEET_ENDPOINT="${TERMFLEET_ENDPOINT:-https://termfleet.example.com}"
+# Option 2: set TERMFLEET_ENDPOINT in your deployment environment.
 ```
 
 ### Manual Registration
@@ -356,5 +355,3 @@ See [CHANGELOG.md](CHANGELOG.md) for version history and changes.
 ## License
 
 Internal training environment project.
-
-

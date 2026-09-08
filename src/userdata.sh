@@ -120,15 +120,15 @@ apt install caddy -y
 setcap 'cap_net_bind_service=+ep' /usr/bin/caddy
 log_message "Caddy installed with network capabilities"
 
-# Create script that waits for stable IP, registers DNS, and configures Caddy
+# Create script that waits for a stable IP, optionally registers DNS, and configures Caddy
 cat << 'EOFSCRIPT' > /usr/local/bin/setup-caddy-dns.sh
 #!/bin/bash
 
-# Source config file if available (for systemd service calls)
+# Source optional Termfleet configuration.
 [ -f /etc/termfleet.conf ] && source /etc/termfleet.conf
 
-# Fallback defaults
-TERMFLEET_ENDPOINT="${TERMFLEET_ENDPOINT:-https://termfleet.aprender.cloud}"
+# Termfleet is opt-in; without an endpoint, use the AWS public hostname.
+TERMFLEET_ENDPOINT="${TERMFLEET_ENDPOINT:-}"
 WORKSTATION_NAME="${WORKSTATION_NAME:-}"
 LOG="/var/log/workstation-setup.log"
 
@@ -136,7 +136,7 @@ log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] [setup-caddy-dns] $1" | tee -a "$LO
 
 log "Starting Caddy DNS setup..."
 log "WORKSTATION_NAME: ${WORKSTATION_NAME:-<not set>}"
-log "TERMFLEET_ENDPOINT: ${TERMFLEET_ENDPOINT}"
+log "Termfleet: $([ -n "$TERMFLEET_ENDPOINT" ] && echo enabled || echo disabled)"
 
 get_public_ip() {
     TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
@@ -160,10 +160,10 @@ done
 
 log "IP stable: $CURRENT_IP"
 
-# Register with Termfleet if workstation name provided
-if [ -n "$WORKSTATION_NAME" ]; then
+# Register with Termfleet only when explicitly configured.
+if [ -n "$TERMFLEET_ENDPOINT" ] && [ -n "$WORKSTATION_NAME" ]; then
     log "Registering with Termfleet..."
-    RESP=$(curl -s -w "\n%{http_code}" -X POST \
+    RESP=$(curl -s --connect-timeout 5 --max-time 10 -w "\n%{http_code}" -X POST \
         -H "Content-Type: application/json" \
         -d "{\"name\":\"$WORKSTATION_NAME\",\"ip\":\"$CURRENT_IP\"}" \
         "$TERMFLEET_ENDPOINT/api/workstations/register" 2>&1)
@@ -184,8 +184,9 @@ if [ -n "$WORKSTATION_NAME" ]; then
         log "Disabling setup-caddy-dns.service (EIP is stable, registration complete)"
         systemctl disable setup-caddy-dns.service 2>/dev/null || true
     else
-        log "Registration failed (HTTP $CODE), using fallback"
-        DOMAIN="${WORKSTATION_NAME}.ws.aprender.cloud"
+        log "Registration failed (HTTP $CODE); using the AWS public hostname"
+        TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+        DOMAIN=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/public-hostname)
         # Keep service enabled to retry on next boot
         log "Service will retry on next boot"
     fi
@@ -196,8 +197,8 @@ fi
 
 log "Configuring Caddy for: $DOMAIN"
 
-# Wait for DNS to resolve (if using custom domain)
-if [ -n "$WORKSTATION_NAME" ]; then
+# Wait for DNS to resolve when Termfleet assigned the domain.
+if [ -n "$TERMFLEET_ENDPOINT" ] && [ -n "$WORKSTATION_NAME" ]; then
     log "Waiting for DNS resolution..."
     DNS_RETRIES=0
     while [ $DNS_RETRIES -lt 30 ]; do
@@ -253,7 +254,7 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-EnvironmentFile=/etc/termfleet.conf
+EnvironmentFile=-/etc/termfleet.conf
 ExecStart=/usr/local/bin/setup-caddy-dns.sh
 RemainAfterExit=yes
 
@@ -318,7 +319,7 @@ register_workstation() {
     log "Registering: $WORKSTATION_NAME IP: $ip"
     
     while [ $retries -lt $MAX_RETRIES ]; do
-        response=$(curl -s -w "\n%{http_code}" -X POST \
+        response=$(curl -s --connect-timeout 5 --max-time 10 -w "\n%{http_code}" -X POST \
             -H "Content-Type: application/json" \
             -d "{\"name\":\"$WORKSTATION_NAME\",\"ip\":\"$ip\"}" \
             "$TERMFLEET_ENDPOINT/api/workstations/register" 2>&1)
@@ -420,20 +421,17 @@ TERMFLEET_ENDPOINT=${TERMFLEET_ENDPOINT}
 WORKSTATION_NAME=${SERVICE_WORKSTATION_NAME}
 EOF
 
-# Only enable the service if we're using Termfleet (workstation name was provided)
+# Enable the registration service only when Termfleet was explicitly configured.
 systemctl daemon-reload
-if [ -n "${WORKSTATION_NAME}" ]; then
+if [ -n "${TERMFLEET_ENDPOINT}" ] && [ -n "${WORKSTATION_NAME}" ]; then
     systemctl enable termfleet-registration.service
     echo "Termfleet registration service installed and enabled"
     echo "Workstation name: ${WORKSTATION_NAME}"
     echo "Service will run on future boots or can be triggered manually:"
     echo "  systemctl start termfleet-registration.service"
 else
-    echo "Termfleet registration service installed but NOT enabled (AWS hostname mode)"
-    echo "To enable later: systemctl enable termfleet-registration.service"
+    echo "Termfleet registration service installed but disabled (no TERMFLEET_ENDPOINT)"
 fi
-echo "Check status: systemctl status termfleet-registration.service"
-echo "View logs: journalctl -u termfleet-registration.service -f"
 
 # Now run the Caddy DNS setup (config file is now available)
 log_message "Running Caddy DNS setup..."
@@ -444,4 +442,3 @@ service ttyd restart
 log_message "======================================"
 log_message "Workstation setup complete!"
 log_message "======================================"
-

@@ -5,7 +5,7 @@
 #        ./destroy.sh -y <workstation_name>  (skip confirmation)
 #
 # This script will:
-# - Delete DNS registration from Termfleet
+# - Delete DNS registration from Termfleet when TERMFLEET_ENDPOINT is set
 # - Disassociate and release the Elastic IP
 # - Terminate the EC2 instance
 #
@@ -45,7 +45,7 @@ if [ -z "$1" ]; then
 fi
 
 WORKSTATION_NAME="$1"
-TERMFLEET_ENDPOINT="${TERMFLEET_ENDPOINT:-https://termfleet.aprender.cloud}"
+TERMFLEET_ENDPOINT="${TERMFLEET_ENDPOINT:-}"
 
 # Validate workstation name
 if ! echo "${WORKSTATION_NAME}" | grep -qE '^[a-zA-Z0-9][a-zA-Z0-9-]{1,61}[a-zA-Z0-9]$'; then
@@ -60,12 +60,18 @@ fi
 echo "======================================"
 echo "DESTROY WORKSTATION: ${WORKSTATION_NAME}"
 echo "======================================"
-echo "Termfleet endpoint: ${TERMFLEET_ENDPOINT}"
+if [ -n "${TERMFLEET_ENDPOINT}" ]; then
+    echo "Termfleet endpoint: ${TERMFLEET_ENDPOINT}"
+else
+    echo "Termfleet: disabled"
+fi
 echo ""
 echo "WARNING: This will permanently destroy:"
 echo "  - EC2 instance"
 echo "  - Elastic IP"
-echo "  - DNS registration"
+if [ -n "${TERMFLEET_ENDPOINT}" ]; then
+    echo "  - DNS registration"
+fi
 echo "  - All data on the instance"
 echo ""
 
@@ -108,24 +114,26 @@ else
 fi
 
 # =================================================================
-# Step 2: Delete DNS registration from Termfleet
+# Step 2: Delete DNS registration from Termfleet, when enabled
 # =================================================================
 
 echo ""
-echo "Step 2: Deleting DNS registration from Termfleet..."
-DELETE_SUCCESS=false
-DELETE_RESPONSE=$(curl -sf -X DELETE "${TERMFLEET_ENDPOINT}/api/workstations/${WORKSTATION_NAME}" 2>/dev/null || echo "")
+if [ -n "${TERMFLEET_ENDPOINT}" ]; then
+    echo "Step 2: Deleting DNS registration from Termfleet..."
+    DELETE_RESPONSE=$(curl -sf --connect-timeout 5 --max-time 10 -X DELETE "${TERMFLEET_ENDPOINT}/api/workstations/${WORKSTATION_NAME}" 2>/dev/null || echo "")
 
-if [ -n "${DELETE_RESPONSE}" ]; then
-    DELETE_SUCCESS=$(echo "${DELETE_RESPONSE}" | jq -r '.success' 2>/dev/null || echo "false")
-    if [ "${DELETE_SUCCESS}" = "true" ]; then
-        echo "✓ DNS registration deleted from Termfleet"
+    if [ -n "${DELETE_RESPONSE}" ]; then
+        DELETE_SUCCESS=$(echo "${DELETE_RESPONSE}" | jq -r '.success' 2>/dev/null || echo "false")
+        if [ "${DELETE_SUCCESS}" = "true" ]; then
+            echo "✓ DNS registration deleted from Termfleet"
+        else
+            echo "⚠ DNS registration not found or already deleted"
+        fi
     else
-        echo "⚠ DNS registration not found or already deleted"
-        DELETE_SUCCESS=false
+        echo "⚠ Could not connect to Termfleet (may be offline)"
     fi
 else
-    echo "⚠ Could not connect to Termfleet (may be offline)"
+    echo "Step 2: Skipping Termfleet DNS cleanup (Termfleet is disabled)"
 fi
 
 # =================================================================
@@ -220,10 +228,12 @@ echo "======================================"
 echo "Workstation: ${WORKSTATION_NAME}"
 echo ""
 echo "Destroyed resources:"
-if [ "${DELETE_SUCCESS}" = "true" ]; then
-    echo "  ✓ DNS registration (Termfleet)"
-else
-    echo "  - DNS registration (not found or offline)"
+if [ -n "${TERMFLEET_ENDPOINT}" ]; then
+    if [ "${DELETE_SUCCESS:-false}" = "true" ]; then
+        echo "  ✓ DNS registration (Termfleet)"
+    else
+        echo "  - DNS registration (not found or offline)"
+    fi
 fi
 if [ "${EIP_ALLOCATION}" != "None" ] && [ -n "${EIP_ALLOCATION}" ]; then
     echo "  ✓ Elastic IP (${EIP_ALLOCATION})"

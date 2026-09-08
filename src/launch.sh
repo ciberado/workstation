@@ -6,14 +6,13 @@
 # 
 # Defaults:
 #   - IAM Role: LabRole
-#   - Termfleet: https://termfleet.aprender.cloud
+#   - Termfleet: disabled (set TERMFLEET_ENDPOINT to enable)
 #
 # Examples:
 #   ./launch.sh desk1              # Named workstation (uses LabRole default)
 #   ./launch.sh CustomRole desk2   # Explicit role and workstation name
 #
-# Note: Termfleet server enforces domain structure (e.g., desk1.ws.aprender.cloud)
-#       Users cannot bypass the domain prefix configured on the server
+# Termfleet is optional. When enabled, its server assigns the workstation domain.
 
 set -e
 
@@ -66,7 +65,7 @@ else
     WORKSTATION_NAME="$2"
 fi
 
-TERMFLEET_ENDPOINT="${TERMFLEET_ENDPOINT:-https://termfleet.aprender.cloud}"
+TERMFLEET_ENDPOINT="${TERMFLEET_ENDPOINT:-}"
 
 # Display configuration
 echo "IAM Role: ${ROLE_NAME}"
@@ -83,28 +82,27 @@ if ! echo "${WORKSTATION_NAME}" | grep -qE '^[a-zA-Z0-9][a-zA-Z0-9-]{1,61}[a-zA-
 fi
 
 echo "Workstation name: ${WORKSTATION_NAME}"
-echo "Termfleet endpoint: ${TERMFLEET_ENDPOINT}"
-echo "Domain will be assigned by Termfleet server (e.g., ${WORKSTATION_NAME}.ws.aprender.cloud)"
+if [ -n "${TERMFLEET_ENDPOINT}" ]; then
+    echo "Termfleet: enabled (${TERMFLEET_ENDPOINT})"
+    echo "Checking Termfleet service availability..."
+    HEALTH_URL="${TERMFLEET_ENDPOINT}/api/health"
+    HEALTH_RESPONSE=$(curl -sf --connect-timeout 5 --max-time 10 "${HEALTH_URL}" 2>/dev/null || echo "")
 
-# Check that Termfleet service is active before proceeding
-echo "Checking Termfleet service availability..."
-HEALTH_URL="${TERMFLEET_ENDPOINT}/api/health"
-HEALTH_RESPONSE=$(curl -sf "${HEALTH_URL}" 2>/dev/null || echo "")
-
-if [ -z "${HEALTH_RESPONSE}" ]; then
-    echo "ERROR: Termfleet service is not reachable at ${TERMFLEET_ENDPOINT}"
-    echo "Please ensure the Termfleet service is running and accessible."
-    exit 1
+    if [ -z "${HEALTH_RESPONSE}" ]; then
+        echo "WARNING: Termfleet is unreachable; continuing without it."
+        TERMFLEET_ENDPOINT=""
+    else
+        HEALTH_STATUS=$(echo "${HEALTH_RESPONSE}" | jq -r '.data.status' 2>/dev/null || echo "")
+        if [ "${HEALTH_STATUS}" != "ok" ]; then
+            echo "WARNING: Termfleet health check failed; continuing without it."
+            TERMFLEET_ENDPOINT=""
+        else
+            echo "✓ Termfleet service is active and healthy"
+        fi
+    fi
+else
+    echo "Termfleet: disabled (using the AWS public hostname)"
 fi
-
-HEALTH_STATUS=$(echo "${HEALTH_RESPONSE}" | jq -r '.data.status' 2>/dev/null || echo "")
-if [ "${HEALTH_STATUS}" != "ok" ]; then
-    echo "ERROR: Termfleet service health check failed"
-    echo "Response: ${HEALTH_RESPONSE}"
-    exit 1
-fi
-
-echo "✓ Termfleet service is active and healthy"
 echo ""
 
 echo "Will attach IAM role to EC2 instance: ${ROLE_NAME}"
@@ -245,8 +243,7 @@ else
     fi
 fi
 
-# Prepare userdata with workstation name and Termfleet endpoint
-# Workstation name is now mandatory, so always include it
+# Prepare userdata with workstation name and optional Termfleet endpoint.
 echo "Preparing userdata with workstation name: ${WORKSTATION_NAME}"
 USERDATA_FILE="${SCRIPT_DIR}/.userdata.tmp"
 # Add environment variables at the beginning of userdata
@@ -448,8 +445,8 @@ PUBLIC_DNS=$(echo ${INSTANCE_INFO} | jq -r '.PublicDnsName')
 PUBLIC_IP=$(echo ${INSTANCE_INFO} | jq -r '.PublicIpAddress')
 IAM_ROLE=$(echo ${INSTANCE_INFO} | jq -r '.IamInstanceProfile.Arn // "None"')
 
-# Note: DNS registration happens automatically on the instance after EIP stabilizes
-if [ -n "${WORKSTATION_NAME}" ]; then
+# When enabled, DNS registration happens automatically after the EIP stabilizes.
+if [ -n "${TERMFLEET_ENDPOINT}" ]; then
     echo "Note: Instance will auto-register DNS once EIP is detected (~30 seconds)"
 fi
 
@@ -500,8 +497,11 @@ if [ "${REUSING_INSTANCE}" = true ]; then
 else
     echo "Web Terminal (after setup completes, ~5-10 minutes):"
 fi
-echo "  https://${WORKSTATION_NAME}.ws.aprender.cloud  (Termfleet-assigned domain)"
-echo "  (fallback: https://${PUBLIC_DNS})"
+if [ -n "${TERMFLEET_ENDPOINT}" ]; then
+    echo "  https://${WORKSTATION_NAME}.ws.aprender.cloud  (Termfleet-assigned domain)"
+else
+    echo "  https://${PUBLIC_DNS}"
+fi
 echo ""
 echo "Ubuntu password: arch@1234"
 echo ""
